@@ -1,0 +1,25 @@
+# Maven/Gradle
+target/
+build/
+*.jar
+*.war
+*.ear
+*.class
+.gradle/
+dependency-reduced-pom.xml
+
+# IDE
+.idea/
+.vscode/
+.eclipse/
+.classpath
+.project
+.settings/
+*.iml
+
+# OS
+.DS_Store
+
+# Config files with secrets (if testing locally)
+src/main/resources/config-local.yml
+/test-server
