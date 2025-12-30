@@ -190,6 +190,7 @@ public class PivotPlugin extends JavaPlugin {
             @Override
             public void run() {
                 eventCollector.flush();
+                lastEventSentTime = System.currentTimeMillis();
             }
         }.runTaskTimerAsynchronously(this, batchIntervalTicks, batchIntervalTicks);
 
