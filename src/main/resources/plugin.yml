@@ -1,16 +1,22 @@
 name: PivotAnalytics
-version: '0.1.0'
+version: '0.2.0'
 main: gg.pivot.PivotPlugin
 api-version: '1.20'
-author: Your Name
+author: Pivot Team
 website: https://pivotmc.dev
-description: Analytics and performance monitoring for Minecraft servers
+description: Real-time analytics and performance monitoring for Minecraft servers
 
 commands:
   pivot:
     description: Pivot Analytics commands
-    usage: /pivot <status|reload>
+    usage: |
+      /pivot - Show help
+      /pivot status - Show connection status
+      /pivot reload - Reload configuration
+      /pivot debug [on|off|toggle] - Toggle debug mode
+      /pivot info - Show plugin information
     permission: pivot.admin
+    aliases: [pv, pivotanalytics]
 
 permissions:
   pivot.admin:
