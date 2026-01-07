@@ -199,7 +199,7 @@ public class EventCollector {
 
         Request request = new Request.Builder()
                 .url(apiEndpoint)
-                .addHeader("Authorization", "Bearer " + apiKey)
+                .addHeader("X-API-Key", apiKey)
                 .addHeader("Content-Type", "application/json")
                 .post(body)
                 .build();
@@ -227,8 +227,11 @@ public class EventCollector {
                         // Specific error handling
                         if (response.code() == 401) {
                             logger.severe("Authentication failed! Check your API key in config.yml");
+                            logger.severe("Make sure your API key starts with 'pvt_'");
                         } else if (response.code() == 429) {
                             logger.warning("Rate limit exceeded. Events will be sent in next batch.");
+                        } else if (response.code() == 400) {
+                            logger.severe("Invalid request data. Enable debug mode for details.");
                         }
                     }
                 } catch (IOException e) {
