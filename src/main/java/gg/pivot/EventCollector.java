@@ -218,6 +218,8 @@ public class EventCollector {
             public void onResponse(Call call, Response response) {
                 try {
                     if (response.isSuccessful()) {
+                        String apiVersion = response.header("X-API-Version");
+                        logger.info("Connected to Pivot API version: " + apiVersion);
                         String responseBody = response.body() != null ? response.body().string() : "no body";
                         logger.info("Successfully sent events: " + responseBody);
                     } else {
