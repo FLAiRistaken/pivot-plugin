@@ -11,6 +11,8 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Queue;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.logging.Logger;
 
 public class EventCollector {
@@ -18,8 +20,9 @@ public class EventCollector {
     private final Logger logger;
     private final OkHttpClient httpClient;
 
-    private final List<JsonObject> playerEvents = new ArrayList<>();
-    private final List<JsonObject> performanceEvents = new ArrayList<>();
+    // ⚡ Bolt Optimization: Use ConcurrentLinkedQueue to avoid blocking main thread with locks
+    private final Queue<JsonObject> playerEvents = new ConcurrentLinkedQueue<>();
+    private final Queue<JsonObject> performanceEvents = new ConcurrentLinkedQueue<>();
 
     public EventCollector(PivotPlugin plugin) {
         this.plugin = plugin;
@@ -31,18 +34,14 @@ public class EventCollector {
      * Get current player event queue size (for /pivot status)
      */
     public int getPlayerEventCount() {
-        synchronized (playerEvents) {
-            return playerEvents.size();
-        }
+        return playerEvents.size();
     }
 
     /**
      * Get current performance event queue size (for /pivot status)
      */
     public int getPerformanceEventCount() {
-        synchronized (performanceEvents) {
-            return performanceEvents.size();
-        }
+        return performanceEvents.size();
     }
 
     /**
@@ -70,9 +69,7 @@ public class EventCollector {
             event.addProperty("hostname", hostname);
         }
 
-        synchronized (playerEvents) {
-            playerEvents.add(event);
-        }
+        playerEvents.add(event);
     }
 
     /**
@@ -112,9 +109,7 @@ public class EventCollector {
         event.addProperty("tps", tps);
         event.addProperty("player_count", playerCount);
 
-        synchronized (performanceEvents) {
-            performanceEvents.add(event);
-        }
+        performanceEvents.add(event);
     }
 
     /**
@@ -128,18 +123,16 @@ public class EventCollector {
             logger.info("Flush called - checking for events to send");
         }
 
-        List<JsonObject> playerBatch;
-        List<JsonObject> perfBatch;
-
-        // Copy and clear lists atomically
-        synchronized (playerEvents) {
-            playerBatch = new ArrayList<>(playerEvents);
-            playerEvents.clear();
+        // Drain queues into local batches
+        List<JsonObject> playerBatch = new ArrayList<>();
+        JsonObject polledEvent;
+        while ((polledEvent = playerEvents.poll()) != null) {
+            playerBatch.add(polledEvent);
         }
 
-        synchronized (performanceEvents) {
-            perfBatch = new ArrayList<>(performanceEvents);
-            performanceEvents.clear();
+        List<JsonObject> perfBatch = new ArrayList<>();
+        while ((polledEvent = performanceEvents.poll()) != null) {
+            perfBatch.add(polledEvent);
         }
 
         if (debugEnabled) {
