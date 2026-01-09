@@ -11,6 +11,17 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
+/**
+ * Listens for Bukkit events to capture player activity.
+ * <p>
+ * Captures:
+ * <ul>
+ *   <li>PlayerLoginEvent: To capture the hostname used to connect (MONITOR priority).</li>
+ *   <li>PlayerJoinEvent: To record player joins and attribute them to hostnames.</li>
+ *   <li>PlayerQuitEvent: To record player quits and clean up caches.</li>
+ * </ul>
+ * </p>
+ */
 public class EventListener implements Listener {
     private final PivotPlugin plugin;
 

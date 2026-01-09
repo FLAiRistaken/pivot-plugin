@@ -61,15 +61,13 @@ Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
 **Never** block main thread with network I/O.
 
 ### Thread Safety
-- Use `synchronized` blocks for event collections
+- Use `ConcurrentLinkedQueue` for event collections (non-blocking)
 - Example:
 ```java
-private final List<JsonObject> playerEvents = new ArrayList<>();
+private final Queue<JsonObject> playerEvents = new ConcurrentLinkedQueue<>();
 
 public void addPlayerEvent(...) {
-    synchronized (playerEvents) {
-        playerEvents.add(event);
-    }
+    playerEvents.add(event);
 }
 ```
 
