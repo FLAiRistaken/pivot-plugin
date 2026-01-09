@@ -15,6 +15,14 @@ import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.logging.Logger;
 
+/**
+ * Collects and batches events for sending to the Pivot API.
+ * <p>
+ * This class uses {@link java.util.concurrent.ConcurrentLinkedQueue} to store events
+ * efficiently without blocking the main server thread. Events are flushed periodically
+ * by an asynchronous task in {@link PivotPlugin}.
+ * </p>
+ */
 public class EventCollector {
     private final PivotPlugin plugin;
     private final Logger logger;
