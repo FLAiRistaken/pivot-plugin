@@ -24,7 +24,12 @@ public class EventCollector {
     public EventCollector(PivotPlugin plugin) {
         this.plugin = plugin;
         this.logger = plugin.getLogger();
-        this.httpClient = new OkHttpClient();
+        // SECURITY: Set explicit timeouts to prevent resource exhaustion
+        this.httpClient = new OkHttpClient.Builder()
+                .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+                .readTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+                .writeTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+                .build();
     }
 
     /**
@@ -190,6 +195,12 @@ public class EventCollector {
 
         if (apiEndpoint == null || apiKey == null) {
             logger.warning("API endpoint or key not configured. Skipping event send.");
+            return;
+        }
+
+        // SECURITY: Final check for HTTPS before sending
+        if (!apiEndpoint.startsWith("https://")) {
+            logger.severe("Security check failed: API endpoint must use HTTPS. Event dropped.");
             return;
         }
 

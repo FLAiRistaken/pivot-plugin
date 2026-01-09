@@ -102,6 +102,9 @@ public class PivotPlugin extends JavaPlugin {
         if (endpoint.isEmpty()) {
             logger.severe("API endpoint not configured!");
             valid = false;
+        } else if (!endpoint.startsWith("https://")) {
+            logger.severe("API endpoint must use HTTPS! (Security Risk)");
+            valid = false;
         }
 
         // Validate intervals
