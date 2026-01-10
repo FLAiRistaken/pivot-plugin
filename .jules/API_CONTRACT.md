@@ -841,7 +841,7 @@ GET /v1/analytics/servers/f86dfb9d-f74e-40dd-8c62-4c53833d1477/performance-summa
 
 ---
 
-#### `GET /v1/servers/{server_id}/performance/compare`
+### GET `/v1/analytics/servers/{server_id}/comparison`
 
 Compare two time periods for performance metrics (e.g., this week vs last week).
 
@@ -853,12 +853,12 @@ Compare two time periods for performance metrics (e.g., this week vs last week).
 - `server_id` (UUID): Server identifier
 
 **Query Parameters:**
-- `current_hours` (int, default=24): Hours for current period (1-168)
-- `compare_hours` (int, default=24): Hours for comparison period (1-168)
+- `current_hours` (int, default=24) - Hours for current period (1-168)
+- `previous_hours` (int, default=24) - Hours for previous period (1-168)
 
 **Example Request:**
 ```
-GET /v1/servers/f86dfb9d-f74e-40dd-8c62-4c53833d1477/performance/compare?current_hours=168&compare_hours=168
+GET /v1/analytics/servers/f86dfb9d-f74e-40dd-8c62-4c53833d1477/comparison?current_hours=168&previous_hours=168
 ```
 *Compares this week (last 168 hours) vs previous week (168 hours before that)*
 
@@ -1295,7 +1295,7 @@ Download the latest Pivot Analytics plugin JAR file.
 3. Rotate compromised API key: POST /v1/servers/{id}/rotate-key
    → Returns new key (show once, update plugin config)
 
-4. Compare performance: GET /v1/servers/{id}/performance/compare?current_hours=168&compare_hours=168
+4. Compare performance: GET /v1/analytics/servers/{id}/comparison?current_hours=168&previous_hours=168
    → "This Week vs Last Week" visualization
 
 5. Delete server: DELETE /v1/servers/{id}
