@@ -13,6 +13,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.TimeUnit;
 import java.util.logging.Logger;
 
 /**
@@ -35,7 +36,12 @@ public class EventCollector {
     public EventCollector(PivotPlugin plugin) {
         this.plugin = plugin;
         this.logger = plugin.getLogger();
-        this.httpClient = new OkHttpClient();
+        // Fix: Add timeouts to prevent resource exhaustion
+        this.httpClient = new OkHttpClient.Builder()
+                .connectTimeout(15, TimeUnit.SECONDS)
+                .readTimeout(15, TimeUnit.SECONDS)
+                .writeTimeout(15, TimeUnit.SECONDS)
+                .build();
     }
 
     /**
@@ -191,6 +197,12 @@ public class EventCollector {
 
         if (apiEndpoint == null || apiKey == null) {
             logger.warning("API endpoint or key not configured. Skipping event send.");
+            return;
+        }
+
+        // Security: Enforce HTTPS
+        if (!apiEndpoint.startsWith("https://")) {
+            logger.severe("Security Error: API endpoint must use HTTPS. Request rejected.");
             return;
         }
 
