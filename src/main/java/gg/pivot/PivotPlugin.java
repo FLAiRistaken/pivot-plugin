@@ -7,6 +7,13 @@ import org.bukkit.scheduler.BukkitTask;
 
 import java.util.logging.Logger;
 
+/**
+ * Main plugin class for Pivot Analytics.
+ * <p>
+ * Handles plugin lifecycle (onEnable, onDisable), configuration validation,
+ * task scheduling for data collection, and command registration.
+ * </p>
+ */
 public class PivotPlugin extends JavaPlugin {
     private Logger logger;
     private EventCollector eventCollector;

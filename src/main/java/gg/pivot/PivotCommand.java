@@ -11,6 +11,18 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
+/**
+ * Handles the /pivot command and its subcommands.
+ * <p>
+ * Supported commands:
+ * <ul>
+ *   <li>/pivot status - Shows connection and queue status</li>
+ *   <li>/pivot reload - Reloads configuration</li>
+ *   <li>/pivot debug - Toggles debug logging</li>
+ *   <li>/pivot info - Shows version and TPS info</li>
+ * </ul>
+ * </p>
+ */
 public class PivotCommand implements CommandExecutor, TabCompleter {
     private final PivotPlugin plugin;
 
