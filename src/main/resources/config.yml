@@ -1,17 +1,53 @@
-# Pivot Analytics Configuration
+# Pivot Analytics Plugin Configuration
+# Get your API key from: https://app.pivotmc.dev
+# Documentation: https://docs.pivotmc.dev
 
-pivot:
-  # Your API endpoint
-  api-endpoint: "http://localhost:8000/v1/ingest"
+# API Configuration
+api:
+  # API endpoint (do not change unless self-hosting)
+  endpoint: "https://api.pivotmc.dev/v1/ingest"
 
-  # Your API key (get this from dashboard)
-  api-key: "paste_your_key_here"
+  # Your API key from the dashboard (required)
+  key: "paste_your_key_here"
 
-  # Server identifier
-  server-id: "test-server"
+  # Server ID (automatically set by dashboard-generated config)
+  server-id: ""
 
-  # How often to upload data (seconds)
-  flush-interval-seconds: 60
+# Data Collection Settings
+collection:
+  # Enable/disable data collection
+  enabled: true
 
-  # Debug mode
-  debug: true
+  # How often to send data batches (seconds)
+  # Lower = more real-time, but more API calls
+  # Recommended: 30-60 seconds
+  batch-interval: 60
+
+  # Track player join/quit events
+  track-player-events: true
+
+  # Track server performance (TPS, player count)
+  track-performance: true
+
+  # Sample TPS every N seconds
+  # Must be less than batch-interval
+  # Recommended: 30 seconds
+  tps-sample-interval: 30
+
+# Privacy Settings
+privacy:
+  # Hash player UUIDs for anonymity (NOT RECOMMENDED)
+  # Disabling this prevents player-level analytics
+  anonymize-players: false
+
+  # Track join hostnames for marketing attribution
+  # Detects which domains drive traffic (e.g., youtube.example.com)
+  track-hostnames: true
+
+# Debug Settings
+debug:
+  # Enable verbose logging (for troubleshooting)
+  enabled: false
+
+  # Log every event batch sent (shows full JSON payload)
+  log-batches: false
