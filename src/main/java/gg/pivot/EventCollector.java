@@ -36,11 +36,11 @@ public class EventCollector {
     public EventCollector(PivotPlugin plugin) {
         this.plugin = plugin;
         this.logger = plugin.getLogger();
-        // Fix: Add timeouts to prevent resource exhaustion
+        // SECURITY: Set explicit timeouts to prevent resource exhaustion
         this.httpClient = new OkHttpClient.Builder()
-                .connectTimeout(15, TimeUnit.SECONDS)
-                .readTimeout(15, TimeUnit.SECONDS)
-                .writeTimeout(15, TimeUnit.SECONDS)
+                .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+                .readTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+                .writeTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
                 .build();
     }
 
@@ -200,9 +200,9 @@ public class EventCollector {
             return;
         }
 
-        // Security: Enforce HTTPS
+        // SECURITY: Final check for HTTPS before sending
         if (!apiEndpoint.startsWith("https://")) {
-            logger.severe("Security Error: API endpoint must use HTTPS. Request rejected.");
+            logger.severe("Security check failed: API endpoint must use HTTPS. Event dropped.");
             return;
         }
 
