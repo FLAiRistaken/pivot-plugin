@@ -11,6 +11,17 @@ import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.logging.Logger;
 
+/**
+ * Utility class for cross-version Server TPS (Ticks Per Second) monitoring.
+ * <p>
+ * This class attempts to retrieve TPS using the most accurate method available:
+ * <ol>
+ *   <li>Paper API ({@code Server.getTPS()}) - Most accurate</li>
+ *   <li>Spigot Reflection ({@code MinecraftServer.recentTps}) - Access internal server fields</li>
+ *   <li>Manual Calculation - Fallback that measures tick duration (works on all versions)</li>
+ * </ol>
+ * </p>
+ */
 public class TPSUtil {
     private static Method paperGetTPSMethod = null;
     private static Field spigotRecentTPSField = null;

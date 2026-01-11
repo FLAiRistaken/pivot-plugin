@@ -80,6 +80,7 @@ public void addPlayerEvent(...) {
 - Validate on `onEnable()` - disable plugin if invalid
 - Check API key starts with `pvt_`
 - Verify intervals are sane (batch >= TPS sample)
+- **Privacy Warning:** Log a warning if anonymization is enabled (`privacy.anonymize-players: true`).
 
 ---
 
@@ -283,11 +284,12 @@ Supports 1.7.10+ including modded servers.
 - `onDisable()`: Cancel tasks, flush remaining events
 - `validateConfig()`: Check API key format, intervals
 - `startTasks()`: Schedule TPS sampling and batch flush tasks
-- `restartTasks()`: Called by `/pivot reload` command
+- `restartTasks()`: Called by `/pivot reload` command to restart tasks with new config
+- `getLastEventSentTime()`: Returns timestamp of last successful batch flush
 
 ### EventListener.java
 **Purpose:** Bukkit event handlers
-- `onPlayerLogin()`: Capture hostname (uses `EventPriority.MONITOR` to avoid Paper warnings)
+- `onPlayerLogin()`: Capture hostname
 - `onPlayerJoin()`: Send JOIN event with cached hostname
 - `onPlayerQuit()`: Send QUIT event, clean up cache
 

@@ -22,6 +22,10 @@ public class PivotPlugin extends JavaPlugin {
 
     private long lastEventSentTime = 0;
 
+    /**
+     * Plugin startup logic.
+     * Initializes configuration, TPS detection, event collector, and background tasks.
+     */
     @Override
     public void onEnable() {
         logger = getLogger();
@@ -70,6 +74,10 @@ public class PivotPlugin extends JavaPlugin {
         logger.info("Version: " + getDescription().getVersion());
     }
 
+    /**
+     * Plugin shutdown logic.
+     * Cancels tasks and flushes remaining events.
+     */
     @Override
     public void onDisable() {
         // Cancel running tasks
@@ -209,6 +217,10 @@ public class PivotPlugin extends JavaPlugin {
         logger.info("Started event batching (every " + batchIntervalSeconds + "s)");
     }
 
+    /**
+     * Restarts the collection tasks.
+     * Called when configuration is reloaded via /pivot reload.
+     */
     public void restartTasks() {
         // Cancel existing tasks
         if (tpsTask != null) {
@@ -231,6 +243,10 @@ public class PivotPlugin extends JavaPlugin {
         return eventCollector;
     }
 
+    /**
+     * Get the timestamp of the last successful event batch flush.
+     * @return Timestamp in milliseconds
+     */
     public long getLastEventSentTime() {
         return lastEventSentTime;
     }

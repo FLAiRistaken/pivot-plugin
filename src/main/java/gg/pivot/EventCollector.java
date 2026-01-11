@@ -33,6 +33,13 @@ public class EventCollector {
     private final Queue<JsonObject> playerEvents = new ConcurrentLinkedQueue<>();
     private final Queue<JsonObject> performanceEvents = new ConcurrentLinkedQueue<>();
 
+    /**
+     * Initializes the EventCollector.
+     * <p>
+     * Sets up the OkHttpClient with strict timeouts (15s) to prevent resource exhaustion.
+     * </p>
+     * @param plugin The main plugin instance
+     */
     public EventCollector(PivotPlugin plugin) {
         this.plugin = plugin;
         this.logger = plugin.getLogger();
