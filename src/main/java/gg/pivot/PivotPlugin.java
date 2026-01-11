@@ -101,7 +101,9 @@ public class PivotPlugin extends JavaPlugin {
             logger.severe("API key not configured! Get your key from https://app.pivotmc.dev");
             valid = false;
         } else if (!apiKey.startsWith("pvt_")) {
-            logger.warning("API key format looks invalid (should start with 'pvt_')");
+            // SECURITY: Enforce API key format to prevent misconfiguration
+            logger.severe("API key is invalid! It must start with 'pvt_'");
+            valid = false;
         }
 
         // Check API endpoint
