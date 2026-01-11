@@ -16,7 +16,7 @@ import java.util.UUID;
  * <p>
  * Captures:
  * <ul>
- *   <li>PlayerLoginEvent: To capture the hostname used to connect (MONITOR priority).</li>
+ *   <li>PlayerLoginEvent: To capture the hostname used to connect.</li>
  *   <li>PlayerJoinEvent: To record player joins and attribute them to hostnames.</li>
  *   <li>PlayerQuitEvent: To record player quits and clean up caches.</li>
  * </ul>
@@ -32,6 +32,11 @@ public class EventListener implements Listener {
         this.plugin = plugin;
     }
 
+    /**
+     * Captures the hostname used by the player to connect.
+     *
+     * @param event The PlayerLoginEvent
+     */
     @EventHandler
     public void onPlayerLogin(PlayerLoginEvent event) {
         // Only capture hostname if tracking enabled
@@ -55,6 +60,11 @@ public class EventListener implements Listener {
         }
     }
 
+    /**
+     * Records a player join event and attributes it to the cached hostname.
+     *
+     * @param event The PlayerJoinEvent
+     */
     @EventHandler
     public void onPlayerJoin(PlayerJoinEvent event) {
         // Check if player event tracking is enabled
@@ -82,6 +92,11 @@ public class EventListener implements Listener {
         }
     }
 
+    /**
+     * Records a player quit event and cleans up any remaining cache data.
+     *
+     * @param event The PlayerQuitEvent
+     */
     @EventHandler
     public void onPlayerQuit(PlayerQuitEvent event) {
         // Clean up cache

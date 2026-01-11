@@ -11,9 +11,21 @@ import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.logging.Logger;
 
+/**
+ * Utility class for cross-version Server TPS (Ticks Per Second) monitoring.
+ * <p>
+ * This class attempts to retrieve TPS using the most accurate method available:
+ * <ol>
+ *   <li>Paper API ({@code Server.getTPS()}) - Most accurate</li>
+ *   <li>Spigot Reflection ({@code MinecraftServer.recentTps}) - Access internal server fields</li>
+ *   <li>Manual Calculation - Fallback that measures tick duration (works on all versions)</li>
+ * </ol>
+ * </p>
+ */
 public class TPSUtil {
     private static Method paperGetTPSMethod = null;
     private static Field spigotRecentTPSField = null;
+    private static Object spigotServerInstance = null; // ⚡ Bolt Optimization: Cache server instance
     private static boolean isPaper = false;
     private static boolean isSpigot = false;
     private static boolean initialized = false;
@@ -45,6 +57,11 @@ public class TPSUtil {
             Class<?> minecraftServerClass = Class.forName("net.minecraft.server." + version + ".MinecraftServer");
             spigotRecentTPSField = minecraftServerClass.getDeclaredField("recentTps");
             spigotRecentTPSField.setAccessible(true);
+
+            // ⚡ Bolt Optimization: Cache server instance to avoid looking it up every tick
+            Method getServerMethod = minecraftServerClass.getDeclaredMethod("getServer");
+            spigotServerInstance = getServerMethod.invoke(null);
+
             isSpigot = true;
             logger.info("TPS Method: Spigot reflection (good)");
             return;
@@ -55,6 +72,11 @@ public class TPSUtil {
             Class<?> minecraftServerClass = Class.forName("net.minecraft.server.MinecraftServer");
             spigotRecentTPSField = minecraftServerClass.getDeclaredField("recentTps");
             spigotRecentTPSField.setAccessible(true);
+
+            // ⚡ Bolt Optimization: Cache server instance to avoid looking it up every tick
+            Method getServerMethod = minecraftServerClass.getDeclaredMethod("getServer");
+            spigotServerInstance = getServerMethod.invoke(null);
+
             isSpigot = true;
             logger.info("TPS Method: Spigot reflection 1.17+ (good)");
             return;
@@ -128,21 +150,10 @@ public class TPSUtil {
             }
         }
 
-        // Spigot reflection method
-        if (isSpigot && spigotRecentTPSField != null) {
+        // ⚡ Bolt Optimization: Use cached server instance
+        if (isSpigot && spigotRecentTPSField != null && spigotServerInstance != null) {
             try {
-                String version = Bukkit.getServer().getClass().getPackage().getName().split("\\.")[3];
-                Class<?> minecraftServerClass;
-
-                try {
-                    minecraftServerClass = Class.forName("net.minecraft.server." + version + ".MinecraftServer");
-                } catch (ClassNotFoundException e) {
-                    minecraftServerClass = Class.forName("net.minecraft.server.MinecraftServer");
-                }
-
-                Method getServerMethod = minecraftServerClass.getDeclaredMethod("getServer");
-                Object minecraftServer = getServerMethod.invoke(null);
-                double[] recentTps = (double[]) spigotRecentTPSField.get(minecraftServer);
+                double[] recentTps = (double[]) spigotRecentTPSField.get(spigotServerInstance);
                 return Math.min(20.0, recentTps[0]);
             } catch (Exception e) {
                 // Fall through
