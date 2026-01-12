@@ -68,7 +68,7 @@ public class EventCollector {
     /**
      * Add a player event (JOIN/QUIT)
      */
-    public void addPlayerEvent(String eventType, String playerUuid, String playerName, String hostname) {
+    public void addPlayerEvent(String eventType, String playerUuid, String playerName, String hostname, String quitReason, Boolean sessionClean, String connectionType) {
         JsonObject event = new JsonObject();
         event.addProperty("timestamp", System.currentTimeMillis());
         event.addProperty("event_type", eventType);
@@ -88,6 +88,16 @@ public class EventCollector {
         boolean trackHostnames = plugin.getConfig().getBoolean("privacy.track-hostnames", true);
         if (trackHostnames && hostname != null && !hostname.isEmpty()) {
             event.addProperty("hostname", hostname);
+        }
+
+        if (quitReason != null) {
+            event.addProperty("quit_reason", quitReason);
+        }
+        if (sessionClean != null) {
+            event.addProperty("session_clean", sessionClean);
+        }
+        if (connectionType != null) {
+            event.addProperty("connection_type", connectionType);
         }
 
         playerEvents.add(event);
