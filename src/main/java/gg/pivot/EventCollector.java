@@ -254,6 +254,12 @@ public class EventCollector {
                         logger.info("Successfully sent events: " + responseBody);
                     } else {
                         String errorBody = response.body() != null ? response.body().string() : "no error details";
+
+                        // SECURITY: Redact API key from error logs if it appears in the response
+                        if (apiKey != null && !apiKey.isEmpty() && errorBody.contains(apiKey)) {
+                            errorBody = errorBody.replace(apiKey, "[REDACTED]");
+                        }
+
                         logger.warning("Failed to send events: " + response.code() + " - " + errorBody);
 
                         // Specific error handling
