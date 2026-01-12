@@ -1,74 +1,58 @@
-name: Release on Tag
+name: Build and Upload Plugin
+
 on:
-  push:
-    tags:
-      - 'v*'
+  release:
+    types: [created, published]
+
 permissions:
   contents: write
+
 jobs:
-  build-and-release:
+  build-and-upload:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
       - name: Set up JDK 8
         uses: actions/setup-java@v4
         with:
           java-version: '8'
           distribution: 'temurin'
           cache: 'maven'
+
       - name: Extract version from tag
         id: version
         run: |
           VERSION=${GITHUB_REF#refs/tags/v}
           echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "Releasing version: $VERSION"
+          echo "Building version: $VERSION"
+
       - name: Update pom.xml version
         run: |
           mvn versions:set -DnewVersion=${{ steps.version.outputs.version }}
           mvn versions:commit
+
       - name: Build with Maven
         run: mvn clean package -DskipTests
-      - name: Create Release
-        id: create_release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: ${{ github.ref_name }}
-          release_name: Pivot Analytics ${{ github.ref_name }}
-          body: |
-            ## Pivot Analytics Plugin ${{ github.ref_name }}
 
-            ### Installation
-            1. Download `PivotAnalytics.jar` below
-            2. Place in your server's `plugins/` folder
-            3. Start server to generate config
-            4. Get your API key from https://app.pivotmc.dev
-            5. Add API key to `plugins/PivotAnalytics/config.yml`
-            6. Restart server or run `/pivot reload`
-
-            ### Compatibility
-            - Minecraft: 1.8.8 - 1.21+
-            - Server Types: Spigot, Paper, Purpur
-            - Java: 8+ required
-          draft: false
-          prerelease: false
       - name: Upload Release Asset
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          upload_url: ${{ github.event.release.upload_url }}
           asset_path: ./target/PivotAnalytics-${{ steps.version.outputs.version }}.jar
           asset_name: PivotAnalytics.jar
           asset_content_type: application/java-archive
+
       - name: Upload Versioned Asset
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          upload_url: ${{ github.event.release.upload_url }}
           asset_path: ./target/PivotAnalytics-${{ steps.version.outputs.version }}.jar
           asset_name: PivotAnalytics-${{ steps.version.outputs.version }}.jar
           asset_content_type: application/java-archive
