@@ -2,7 +2,7 @@ name: Build and Upload Plugin
 
 on:
   release:
-    types: [created, published]
+    types: [published]
 
 permissions:
   contents: write
