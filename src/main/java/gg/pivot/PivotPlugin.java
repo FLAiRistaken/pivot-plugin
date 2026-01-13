@@ -234,6 +234,11 @@ public class PivotPlugin extends JavaPlugin {
      * Called when configuration is reloaded via /pivot reload.
      */
     public void restartTasks() {
+        // Reload event collector configuration
+        if (eventCollector != null) {
+            eventCollector.reload();
+        }
+
         // Cancel existing tasks
         if (tpsTask != null) {
             tpsTask.cancel();
