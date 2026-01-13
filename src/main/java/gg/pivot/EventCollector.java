@@ -28,6 +28,7 @@ public class EventCollector {
     private final PivotPlugin plugin;
     private final Logger logger;
     private final OkHttpClient httpClient;
+    private volatile String apiKey;
 
     // ⚡ Bolt Optimization: Use ConcurrentLinkedQueue to avoid blocking main thread with locks
     private final Queue<JsonObject> playerEvents = new ConcurrentLinkedQueue<>();
@@ -44,12 +45,20 @@ public class EventCollector {
     public EventCollector(PivotPlugin plugin) {
         this.plugin = plugin;
         this.logger = plugin.getLogger();
+        this.apiKey = plugin.getConfig().getString("api.key");
         // SECURITY: Set explicit timeouts to prevent resource exhaustion
         this.httpClient = new OkHttpClient.Builder()
                 .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
                 .readTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
                 .writeTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
                 .build();
+    }
+
+    /**
+     * Reloads configuration values (API key)
+     */
+    public void reload() {
+        this.apiKey = plugin.getConfig().getString("api.key");
     }
 
     /**
@@ -262,7 +271,6 @@ public class EventCollector {
      */
     private Request buildRequest(String json) {
         String apiEndpoint = plugin.getConfig().getString("api.endpoint");
-        String apiKey = plugin.getConfig().getString("api.key");
 
         if (apiEndpoint == null || apiKey == null) {
             logger.warning("API endpoint or key not configured. Skipping event send.");
@@ -294,8 +302,6 @@ public class EventCollector {
         Request request = buildRequest(json);
         if (request == null) return;
 
-        final String apiKey = plugin.getConfig().getString("api.key");
-
         httpClient.newCall(request).enqueue(new Callback() {
             @Override
             public void onFailure(Call call, IOException e) {
@@ -318,8 +324,8 @@ public class EventCollector {
                         String errorBody = response.body() != null ? response.body().string() : "no error details";
 
                         // SECURITY: Redact API key from error logs if it appears in the response
-                        if (apiKey != null && !apiKey.isEmpty() && errorBody.contains(apiKey)) {
-                            errorBody = errorBody.replace(apiKey, "[REDACTED]");
+                        if (EventCollector.this.apiKey != null && !EventCollector.this.apiKey.isEmpty() && errorBody.contains(EventCollector.this.apiKey)) {
+                            errorBody = errorBody.replace(EventCollector.this.apiKey, "[REDACTED]");
                         }
 
                         logger.warning("Failed to send events: " + response.code() + " - " + errorBody);
