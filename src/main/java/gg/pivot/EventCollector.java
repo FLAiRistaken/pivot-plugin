@@ -294,6 +294,8 @@ public class EventCollector {
         Request request = buildRequest(json);
         if (request == null) return;
 
+        final String apiKey = plugin.getConfig().getString("api.key");
+
         httpClient.newCall(request).enqueue(new Callback() {
             @Override
             public void onFailure(Call call, IOException e) {
@@ -314,9 +316,6 @@ public class EventCollector {
                         logger.info("Successfully sent events: " + responseBody);
                     } else {
                         String errorBody = response.body() != null ? response.body().string() : "no error details";
-
-                        // Retrieve API key for redaction
-                        String apiKey = plugin.getConfig().getString("api.key");
 
                         // SECURITY: Redact API key from error logs if it appears in the response
                         if (apiKey != null && !apiKey.isEmpty() && errorBody.contains(apiKey)) {
