@@ -32,6 +32,7 @@ public class EventCollector {
     // ⚡ Bolt Optimization: Use ConcurrentLinkedQueue to avoid blocking main thread with locks
     private final Queue<JsonObject> playerEvents = new ConcurrentLinkedQueue<>();
     private final Queue<JsonObject> performanceEvents = new ConcurrentLinkedQueue<>();
+    private final Queue<JsonObject> serverEvents = new ConcurrentLinkedQueue<>();
 
     /**
      * Initializes the EventCollector.
@@ -144,6 +145,44 @@ public class EventCollector {
     }
 
     /**
+     * Add a server start event
+     */
+    public void addServerStartEvent(String serverVersion, int pluginsLoaded) {
+        JsonObject event = new JsonObject();
+        event.addProperty("timestamp", System.currentTimeMillis());
+        event.addProperty("event_type", "SERVER_START");
+        event.addProperty("server_version", serverVersion);
+        event.addProperty("plugins_loaded", pluginsLoaded);
+
+        serverEvents.add(event);
+    }
+
+    /**
+     * Send a server stop event synchronously
+     */
+    public void sendServerStopEvent(String reason) {
+        JsonObject event = new JsonObject();
+        event.addProperty("timestamp", System.currentTimeMillis());
+        event.addProperty("event_type", "SERVER_STOP");
+        event.addProperty("reason", reason);
+
+        // Build payload
+        JsonObject payload = new JsonObject();
+        payload.addProperty("batch_timestamp", System.currentTimeMillis());
+
+        JsonArray serverArray = new JsonArray();
+        serverArray.add(event);
+        payload.add("server_events", serverArray);
+
+        // Send synchronously
+        try {
+            sendToAPISync(payload.toString());
+        } catch (IOException e) {
+            logger.warning("Failed to send SERVER_STOP event: " + e.getMessage());
+        }
+    }
+
+    /**
      * Flush all collected events to API
      */
     public void flush() {
@@ -166,12 +205,17 @@ public class EventCollector {
             perfBatch.add(polledEvent);
         }
 
+        List<JsonObject> serverBatch = new ArrayList<>();
+        while ((polledEvent = serverEvents.poll()) != null) {
+            serverBatch.add(polledEvent);
+        }
+
         if (debugEnabled) {
-            logger.info("Events to send - Player: " + playerBatch.size() + ", Performance: " + perfBatch.size());
+            logger.info("Events to send - Player: " + playerBatch.size() + ", Performance: " + perfBatch.size() + ", Server: " + serverBatch.size());
         }
 
         // Nothing to send
-        if (playerBatch.isEmpty() && perfBatch.isEmpty()) {
+        if (playerBatch.isEmpty() && perfBatch.isEmpty() && serverBatch.isEmpty()) {
             if (debugEnabled) {
                 logger.info("No events to send");
             }
@@ -194,6 +238,12 @@ public class EventCollector {
         }
         payload.add("performance_events", perfArray);
 
+        JsonArray serverArray = new JsonArray();
+        for (JsonObject event : serverBatch) {
+            serverArray.add(event);
+        }
+        payload.add("server_events", serverArray);
+
         String json = payload.toString();
 
         // Log full payload if debug enabled
@@ -206,33 +256,43 @@ public class EventCollector {
     }
 
     /**
-     * Send JSON payload to API endpoint
+     * Builds the HTTP request for the API
+     * @param json The JSON payload
+     * @return The built Request object or null if validation fails
      */
-    private void sendToAPI(String json) {
+    private Request buildRequest(String json) {
         String apiEndpoint = plugin.getConfig().getString("api.endpoint");
         String apiKey = plugin.getConfig().getString("api.key");
 
         if (apiEndpoint == null || apiKey == null) {
             logger.warning("API endpoint or key not configured. Skipping event send.");
-            return;
+            return null;
         }
 
         // SECURITY: Final check for HTTPS before sending
         if (!apiEndpoint.startsWith("https://")) {
             logger.severe("Security check failed: API endpoint must use HTTPS. Event dropped.");
-            return;
+            return null;
         }
 
         RequestBody body = RequestBody.create(
                 json,
                 MediaType.parse("application/json"));
 
-        Request request = new Request.Builder()
+        return new Request.Builder()
                 .url(apiEndpoint)
                 .addHeader("X-API-Key", apiKey)
                 .addHeader("Content-Type", "application/json")
                 .post(body)
                 .build();
+    }
+
+    /**
+     * Send JSON payload to API endpoint
+     */
+    private void sendToAPI(String json) {
+        Request request = buildRequest(json);
+        if (request == null) return;
 
         httpClient.newCall(request).enqueue(new Callback() {
             @Override
@@ -279,5 +339,22 @@ public class EventCollector {
                 }
             }
         });
+    }
+
+    private void sendToAPISync(String json) throws IOException {
+        Request request = buildRequest(json);
+        if (request == null) return;
+
+        try (Response response = httpClient.newCall(request).execute()) {
+            if (response.isSuccessful()) {
+                String apiVersion = response.header("X-API-Version");
+                logger.info("Connected to Pivot API version: " + apiVersion);
+                String responseBody = response.body() != null ? response.body().string() : "no body";
+                logger.info("Successfully sent events: " + responseBody);
+            } else {
+                String errorBody = response.body() != null ? response.body().string() : "no error details";
+                logger.warning("Failed to send events: " + response.code() + " - " + errorBody);
+            }
+        }
     }
 }

@@ -70,6 +70,13 @@ public class PivotPlugin extends JavaPlugin {
         // Start tasks with dynamic intervals from config
         startTasks();
 
+        // Send server start event
+        if (eventCollector != null) {
+            String serverVersion = getServer().getVersion();
+            int pluginsLoaded = getServer().getPluginManager().getPlugins().length;
+            eventCollector.addServerStartEvent(serverVersion, pluginsLoaded);
+        }
+
         logger.info("Pivot Analytics enabled successfully!");
         logger.info("Version: " + getDescription().getVersion());
     }
@@ -80,6 +87,11 @@ public class PivotPlugin extends JavaPlugin {
      */
     @Override
     public void onDisable() {
+        // Send SERVER_STOP event synchronously
+        if (eventCollector != null) {
+            eventCollector.sendServerStopEvent("manual");
+        }
+
         // Cancel running tasks
         if (tpsTask != null) {
             tpsTask.cancel();
