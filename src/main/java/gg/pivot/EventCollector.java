@@ -319,14 +319,12 @@ public class EventCollector {
                         String apiVersion = response.header("X-API-Version");
                         logger.info("Connected to Pivot API version: " + apiVersion);
                         String responseBody = response.body() != null ? response.body().string() : "no body";
-                        logger.info("Successfully sent events: " + responseBody);
+                        logger.info("Successfully sent events: " + redactSensitiveInfo(responseBody));
                     } else {
                         String errorBody = response.body() != null ? response.body().string() : "no error details";
 
                         // SECURITY: Redact API key from error logs if it appears in the response
-                        if (EventCollector.this.apiKey != null && !EventCollector.this.apiKey.isEmpty() && errorBody.contains(EventCollector.this.apiKey)) {
-                            errorBody = errorBody.replace(EventCollector.this.apiKey, "[REDACTED]");
-                        }
+                        errorBody = redactSensitiveInfo(errorBody);
 
                         logger.warning("Failed to send events: " + response.code() + " - " + errorBody);
 
@@ -358,11 +356,21 @@ public class EventCollector {
                 String apiVersion = response.header("X-API-Version");
                 logger.info("Connected to Pivot API version: " + apiVersion);
                 String responseBody = response.body() != null ? response.body().string() : "no body";
-                logger.info("Successfully sent events: " + responseBody);
+                logger.info("Successfully sent events: " + redactSensitiveInfo(responseBody));
             } else {
                 String errorBody = response.body() != null ? response.body().string() : "no error details";
-                logger.warning("Failed to send events: " + response.code() + " - " + errorBody);
+                logger.warning("Failed to send events: " + response.code() + " - " + redactSensitiveInfo(errorBody));
             }
         }
+    }
+
+    /**
+     * Redact sensitive information (API key) from logs
+     */
+    private String redactSensitiveInfo(String text) {
+        if (this.apiKey != null && !this.apiKey.isEmpty() && text.contains(this.apiKey)) {
+            return text.replace(this.apiKey, "[REDACTED]");
+        }
+        return text;
     }
 }
