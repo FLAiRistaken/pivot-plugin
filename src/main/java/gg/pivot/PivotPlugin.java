@@ -5,6 +5,12 @@ import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.scheduler.BukkitTask;
 
+import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermission;
+import java.util.Set;
 import java.util.logging.Logger;
 
 /**
@@ -46,6 +52,9 @@ public class PivotPlugin extends JavaPlugin {
 
         // Log configuration (with API key masking)
         logConfiguration();
+
+        // Security check for config file permissions
+        checkConfigPermissions();
 
         // Initialize TPS detection
         TPSUtil.initialize(this, logger);
@@ -180,6 +189,27 @@ public class PivotPlugin extends JavaPlugin {
         }
 
         logger.info("  Debug Mode: " + getConfig().getBoolean("debug.enabled", false));
+    }
+
+    /**
+     * Check if config.yml is world-readable (security risk)
+     */
+    private void checkConfigPermissions() {
+        File configFile = new File(getDataFolder(), "config.yml");
+        if (configFile.exists()) {
+            try {
+                Path path = configFile.toPath();
+                Set<PosixFilePermission> permissions = Files.getPosixFilePermissions(path);
+                if (permissions.contains(PosixFilePermission.OTHERS_READ)) {
+                    logger.warning("SECURITY WARNING: config.yml is world-readable!");
+                    logger.warning("Please restrict file permissions (chmod 600) to protect your API key.");
+                }
+            } catch (UnsupportedOperationException e) {
+                // Not a POSIX system (e.g. Windows), skip check
+            } catch (IOException e) {
+                logger.warning("Failed to check config.yml permissions: " + e.getMessage());
+            }
+        }
     }
 
     /**

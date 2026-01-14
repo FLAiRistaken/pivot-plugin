@@ -47,7 +47,7 @@ public class EventListener implements Listener {
      *
      * @param event The PlayerLoginEvent
      */
-    @EventHandler
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onPlayerLogin(PlayerLoginEvent event) {
         // Only capture hostname if tracking enabled
         if (!plugin.getConfig().getBoolean("privacy.track-hostnames", true)) {
