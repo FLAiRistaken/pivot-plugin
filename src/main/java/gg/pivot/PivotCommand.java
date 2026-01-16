@@ -71,7 +71,7 @@ public class PivotCommand implements CommandExecutor, TabCompleter {
         sender.sendMessage(ChatColor.GOLD + "========== Pivot Analytics Status ==========");
 
         // Configuration status
-        String apiKey = plugin.getConfig().getString("api.key", "");
+        String apiKey = plugin.getConfig().getString("api.key", "").trim();
         boolean configured = !apiKey.isEmpty() && !apiKey.equals("paste_your_key_here");
 
         sender.sendMessage(ChatColor.AQUA + "Configuration:");
