@@ -1,9 +1,9 @@
 # Pivot Analytics API Contract
 
-**Version:** 1.1.0
+**Version:** 1.3.0
 **Base URL:** `https://api.pivotmc.dev/v1`
 **Environment:** Production
-**Last Updated:** January 7, 2026
+**Last Updated:** January 10, 2026
 
 ---
 
@@ -60,6 +60,7 @@ X-API-Key: pvt_<random_token>
 - Auto-generated on server creation
 - Scoped to single server
 - Expires after 1 year (can be rotated)
+- **Security:** Only displayed at creation and rotation. Never retrievable afterwards.
 
 ---
 
@@ -506,13 +507,14 @@ Generate plugin configuration file for server setup.
 {
   "server_id": "f86dfb9d-f74e-40dd-8c62-4c53833d1477",
   "server_name": "My Survival Server",
-  "config_yaml": "# Pivot Analytics Plugin Configuration\n...",
+  "config_yaml": "# Pivot Analytics Plugin Configuration\napi:\n  key: YOUR_API_KEY_HERE\n...",
   "api_endpoint": "https://api.pivotmc.dev",
   "instructions": "\n## Setup Instructions\n..."
 }
 ```
 
 **Usage:** Frontend extracts `config_yaml` field and displays it for copy-paste.
+**Note:** The `config_yaml` contains a placeholder `YOUR_API_KEY_HERE`. The user must replace this with their actual API key (saved during creation/rotation).
 
 **Error Responses:**
 - `404 Not Found`: Server or API key not found
@@ -829,7 +831,43 @@ GET /v1/analytics/servers/f86dfb9d-f74e-40dd-8c62-4c53833d1477/performance-summa
     "unique_players": 89,
     "peak_players": 45
   },
-  "health_score": 95
+  "peak_hours": {
+    "best_performance": "Server runs smoothest at 2:00 PM UTC (19.9 TPS)",
+    "worst_performance": "Server struggles most at 8:00 PM UTC (17.5 TPS)",
+    "hourly_breakdown": [
+      {
+        "hour": 0,
+        "avg_tps": 19.8,
+        "avg_players": 12.5
+      }
+    ]
+  },
+  "health_score": 95,
+  "health": {
+    "score": 95,
+    "grade": "A+",
+    "factors": [
+      {
+        "name": "TPS Stability",
+        "score": 98.0,
+        "weight": 0.5,
+        "contribution": 49.0
+      },
+      {
+        "name": "Player Retention",
+        "score": 92.0,
+        "weight": 0.3,
+        "contribution": 27.6
+      },
+      {
+        "name": "Uptime",
+        "score": 100.0,
+        "weight": 0.2,
+        "contribution": 20.0
+      }
+    ],
+    "recommendations": []
+  }
 }
 ```
 
@@ -841,7 +879,7 @@ GET /v1/analytics/servers/f86dfb9d-f74e-40dd-8c62-4c53833d1477/performance-summa
 
 ---
 
-### GET `/v1/analytics/servers/{server_id}/comparison`
+### `GET /v1/analytics/servers/{server_id}/comparison`
 
 Compare two time periods for performance metrics (e.g., this week vs last week).
 
@@ -1044,6 +1082,179 @@ GET /v1/analytics/servers/f86dfb9d-f74e-40dd-8c62-4c53833d1477/lag-churn?hours=2
 **Frontend Usage:**
 - Overlay `quit_events` on `tps_samples` chart
 - Visual correlation shows lag-induced player exodus
+
+---
+
+#### `GET /v1/analytics/servers/{server_id}/lag-spikes`
+
+Detect and classify lag spikes (periods where TPS drops below 18.0 for 30+ seconds).
+
+**Authentication:** Required (JWT)
+
+**Rate Limit:** 100 requests/hour
+
+**Path Parameters:**
+- `server_id` (UUID): Server identifier
+
+**Query Parameters:**
+- `hours` (int, default=24): Hours to analyze (1-720)
+
+**Success Response (200 OK):**
+```json
+{
+  "server_id": "f86dfb9d-f74e-40dd-8c62-4c53833d1477",
+  "server_name": "My Survival Server",
+  "analysis_period_hours": 24,
+  "spikes": [
+    {
+      "start_time": "2026-01-07T14:25:00Z",
+      "end_time": "2026-01-07T14:27:00Z",
+      "duration_seconds": 120,
+      "severity": "critical",
+      "min_tps": 8.5,
+      "avg_tps": 10.2,
+      "affected_players": 45,
+      "quit_count": 12
+    }
+  ],
+  "summary": {
+    "total_spikes": 1,
+    "total_downtime_minutes": 2.0,
+    "severity_counts": {
+      "minor": 0,
+      "major": 0,
+      "critical": 1
+    }
+  }
+}
+```
+
+---
+
+#### `GET /v1/analytics/servers/{server_id}/player-sessions`
+
+Calculate play session durations and statistics.
+
+**Authentication:** Required (JWT)
+
+**Rate Limit:** 100 requests/hour
+
+**Path Parameters:**
+- `server_id` (UUID): Server identifier
+
+**Query Parameters:**
+- `hours` (int, default=24): Hours to analyze (1-720)
+
+**Success Response (200 OK):**
+```json
+{
+  "server_id": "f86dfb9d-f74e-40dd-8c62-4c53833d1477",
+  "server_name": "My Survival Server",
+  "analysis_period_hours": 24,
+  "summary": {
+    "avg_session_minutes": 45.2,
+    "median_session_minutes": 32.5,
+    "total_sessions": 125,
+    "total_playtime_minutes": 5650.0,
+    "bounce_rate": 12.5,
+    "engagement_rate": 25.6,
+    "ongoing_sessions": 15
+  },
+  "distribution": [
+    {
+      "label": "0-5 min",
+      "count": 15,
+      "percentage": 12.0
+    },
+    {
+      "label": "60+ min",
+      "count": 32,
+      "percentage": 25.6
+    }
+  ]
+}
+```
+
+**Metrics:**
+- `bounce_rate`: Percentage of sessions < 5 minutes
+- `engagement_rate`: Percentage of sessions > 60 minutes
+
+---
+
+#### `GET /v1/analytics/servers/{server_id}/lag-impact`
+
+Quantify business impact of lag (lost players, sessions cut short).
+
+**Authentication:** Required (JWT)
+
+**Rate Limit:** 50 requests/hour
+
+**Path Parameters:**
+- `server_id` (UUID): Server identifier
+
+**Query Parameters:**
+- `hours` (int, default=24): Hours to analyze (1-720)
+
+**Success Response (200 OK):**
+```json
+{
+  "server_id": "f86dfb9d-f74e-40dd-8c62-4c53833d1477",
+  "server_name": "My Survival Server",
+  "time_period_hours": 24,
+  "total_lag_minutes": 15.5,
+  "impact_metrics": {
+    "players_lost_to_lag": 8,
+    "sessions_cut_short": 5,
+    "estimated_playtime_lost_minutes": 120.5
+  },
+  "comparison_metrics": {
+    "quit_rate_during_lag": 12.5,
+    "quit_rate_normal": 2.1,
+    "lag_multiplier": 5.95
+  },
+  "recommendations": [
+    "Players are 5.9x more likely to quit during lag spikes.",
+    "Lag spikes caused 8 player disconnects."
+  ]
+}
+```
+
+---
+
+#### `GET /v1/analytics/servers/{server_id}/retention-cohorts`
+
+Track player return behavior grouped by first join date (cohort analysis).
+
+**Authentication:** Required (JWT)
+
+**Rate Limit:** 100 requests/hour
+
+**Path Parameters:**
+- `server_id` (UUID): Server identifier
+
+**Query Parameters:**
+- `days` (int, default=30): Days to analyze (1-90)
+
+**Success Response (200 OK):**
+```json
+{
+  "server_id": "f86dfb9d-f74e-40dd-8c62-4c53833d1477",
+  "server_name": "My Survival Server",
+  "period_days": 30,
+  "cohorts": [
+    {
+      "cohort_date": "2026-01-01",
+      "initial_players": 50,
+      "day_1_retention": 0.45,
+      "day_7_retention": 0.20,
+      "day_30_retention": null
+    }
+  ],
+  "avg_day_1_retention": 0.42,
+  "avg_day_7_retention": 0.18,
+  "avg_day_30_retention": 0.12
+}
+```
 
 ---
 
@@ -1337,6 +1548,14 @@ Download the latest Pivot Analytics plugin JAR file.
 ---
 
 ## Changelog
+
+**v1.3.0 (2026-01-10)**
+- Added `GET /v1/analytics/servers/{server_id}/retention-cohorts` (cohort analysis)
+- Added `GET /v1/analytics/servers/{server_id}/lag-spikes` (detailed lag analysis)
+- Added `GET /v1/analytics/servers/{server_id}/player-sessions` (session duration stats)
+- Added `GET /v1/analytics/servers/{server_id}/lag-impact` (business impact of lag)
+- Updated `PerformanceSummaryResponse` with TPS history, health breakdown, and peak hours
+- Updated `HostnameAttribution` with AI marketing insights
 
 **v1.2.0 (2026-01-09)**
 - Added `GET /v1/servers/{server_id}/api-key` (retrieve API key metadata for Settings page)
