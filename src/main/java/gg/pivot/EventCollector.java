@@ -261,7 +261,8 @@ public class EventCollector {
 
         // Log full payload if debug enabled
         if (logBatches) {
-            logger.info("Sending batch payload: " + json);
+            // SECURITY: Redact PII from debug logs
+            logger.info("Sending batch payload: " + redactPii(json));
         }
 
         // Send to API
@@ -376,5 +377,31 @@ public class EventCollector {
             return text.replace(this.apiKey, "[REDACTED]");
         }
         return text;
+    }
+
+    /**
+     * Redact PII (UUIDs, names, hostnames) from JSON payload for logging
+     */
+    private String redactPii(String json) {
+        try {
+            JsonObject obj = com.google.gson.JsonParser.parseString(json).getAsJsonObject();
+            if (obj.has("player_events")) {
+                JsonArray players = obj.getAsJsonArray("player_events");
+                // Need to clone or rebuild to avoid modifying the original array if we were modifying objects in place
+                // But parseString creates a NEW structure, so we are safe to modify 'obj'
+                for (com.google.gson.JsonElement e : players) {
+                    if (e.isJsonObject()) {
+                        JsonObject p = e.getAsJsonObject();
+                        if (p.has("player_uuid")) p.addProperty("player_uuid", "[REDACTED]");
+                        if (p.has("player_name")) p.addProperty("player_name", "[REDACTED]");
+                        if (p.has("hostname")) p.addProperty("hostname", "[REDACTED]");
+                    }
+                }
+            }
+            return obj.toString();
+        } catch (Exception e) {
+            // Fallback if parsing fails
+            return "[Unable to redact PII - Payload Hidden]";
+        }
     }
 }
