@@ -121,11 +121,17 @@ public class PivotPlugin extends JavaPlugin {
     /**
      * Validate configuration on startup
      */
-    private boolean validateConfig() {
+    public boolean validateConfig() {
         boolean valid = true;
 
         // Check API key
         String apiKey = getConfig().getString("api.key", "");
+        if (apiKey != null) {
+            apiKey = apiKey.trim(); // TRIM WHITESPACE
+        } else {
+            apiKey = "";
+        }
+
         if (apiKey.isEmpty() || apiKey.equals("paste_your_key_here")) {
             logger.severe("API key not configured! Get your key from https://app.pivotmc.dev");
             valid = false;
@@ -166,8 +172,10 @@ public class PivotPlugin extends JavaPlugin {
      */
     private void logConfiguration() {
         String apiKey = getConfig().getString("api.key", "not set");
+        if (apiKey != null) apiKey = apiKey.trim(); // Trim whitespace
+
         String maskedKey;
-        if (apiKey.equals("not set") || apiKey.equals("paste_your_key_here")) {
+        if (apiKey == null || apiKey.equals("not set") || apiKey.equals("paste_your_key_here")) {
             maskedKey = "NOT CONFIGURED";
         } else {
             maskedKey = "***" + apiKey.substring(Math.max(0, apiKey.length() - 4));

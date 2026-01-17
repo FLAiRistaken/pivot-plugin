@@ -45,7 +45,10 @@ public class EventCollector {
     public EventCollector(PivotPlugin plugin) {
         this.plugin = plugin;
         this.logger = plugin.getLogger();
-        this.apiKey = plugin.getConfig().getString("api.key");
+
+        String key = plugin.getConfig().getString("api.key");
+        this.apiKey = key != null ? key.trim() : null; // SECURITY: Trim whitespace to prevent leakage
+
         // SECURITY: Set explicit timeouts to prevent resource exhaustion
         this.httpClient = new OkHttpClient.Builder()
                 .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
@@ -58,7 +61,8 @@ public class EventCollector {
      * Reloads configuration values (API key)
      */
     public void reload() {
-        this.apiKey = plugin.getConfig().getString("api.key");
+        String key = plugin.getConfig().getString("api.key");
+        this.apiKey = key != null ? key.trim() : null; // SECURITY: Trim whitespace
     }
 
     /**

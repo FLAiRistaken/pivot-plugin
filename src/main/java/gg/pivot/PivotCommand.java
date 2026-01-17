@@ -152,6 +152,13 @@ public class PivotCommand implements CommandExecutor, TabCompleter {
             // Reload config
             plugin.reloadConfig();
 
+            // Validate new config before applying
+            if (!plugin.validateConfig()) {
+                sender.sendMessage(ChatColor.RED + "✗ Configuration validation failed!");
+                sender.sendMessage(ChatColor.RED + "Please check console for details and fix config.yml.");
+                return true;
+            }
+
             // Restart tasks with new intervals
             plugin.restartTasks();
 
