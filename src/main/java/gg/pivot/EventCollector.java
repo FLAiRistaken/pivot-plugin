@@ -206,6 +206,14 @@ public class EventCollector {
             logger.info("Flush called - checking for events to send");
         }
 
+        // ⚡ Bolt Optimization: Early return if queues empty to avoid ArrayList allocations
+        if (playerEvents.isEmpty() && performanceEvents.isEmpty() && serverEvents.isEmpty()) {
+            if (debugEnabled) {
+                logger.info("No events to send");
+            }
+            return;
+        }
+
         // Drain queues into local batches
         List<JsonObject> playerBatch = new ArrayList<>();
         JsonObject polledEvent;
@@ -227,11 +235,8 @@ public class EventCollector {
             logger.info("Events to send - Player: " + playerBatch.size() + ", Performance: " + perfBatch.size() + ", Server: " + serverBatch.size());
         }
 
-        // Nothing to send
+        // Nothing to send (double check after drain)
         if (playerBatch.isEmpty() && perfBatch.isEmpty() && serverBatch.isEmpty()) {
-            if (debugEnabled) {
-                logger.info("No events to send");
-            }
             return;
         }
 
