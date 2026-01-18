@@ -1,7 +1,7 @@
 # Plugin Context - Pivot Analytics Minecraft Plugin
 
 **Version:** 0.2.0  
-**Last Updated:** January 9, 2026  
+**Last Updated:** January 20, 2026
 **Purpose:** Context document for Jules AI agent working on Pivot Analytics Minecraft plugin
 
 ---
@@ -133,6 +133,7 @@ httpClient.newCall(request).execute(); // Synchronous!
   - `player_name` (String, 1-16 chars)
   - `hostname` (String, nullable) - Captured from `PlayerLoginEvent`
   - `timestamp` (long, Unix milliseconds)
+  - `connection_type` (String, "initial" or "reconnect")
 - **Hostname Caching:** `PlayerLoginEvent` fires before `PlayerJoinEvent`, so cache hostname by UUID
 
 **2. PLAYER_QUIT**
@@ -142,12 +143,27 @@ httpClient.newCall(request).execute(); // Synchronous!
   - `player_name` (String)
   - `hostname` (null for quits)
   - `timestamp` (long)
+  - `quit_reason` (String, nullable)
+  - `session_clean` (boolean)
 
 **3. TPS_SAMPLE**
 - **Trigger:** Scheduled task (every 30 seconds, configurable)
 - **Data Captured:**
   - `tps` (double, 0.0-20.0)
   - `player_count` (int)
+  - `timestamp` (long)
+
+**4. SERVER_START**
+- **Trigger:** Plugin Enable
+- **Data Captured:**
+  - `server_version` (String)
+  - `plugins_loaded` (int)
+  - `timestamp` (long)
+
+**5. SERVER_STOP**
+- **Trigger:** Plugin Disable
+- **Data Captured:**
+  - `reason` (String, e.g. "manual")
   - `timestamp` (long)
 
 ### Batch Format
