@@ -191,7 +191,8 @@ public class EventCollector {
         try {
             sendToAPISync(payload.toString());
         } catch (IOException e) {
-            logger.warning("Failed to send SERVER_STOP event: " + e.getMessage());
+            // SECURITY: Redact API key from error logs
+            logger.warning("Failed to send SERVER_STOP event: " + redactSensitiveInfo(e.getMessage()));
         }
     }
 
@@ -315,7 +316,8 @@ public class EventCollector {
         httpClient.newCall(request).enqueue(new Callback() {
             @Override
             public void onFailure(Call call, IOException e) {
-                logger.warning("Failed to send events: " + e.getMessage());
+                // SECURITY: Redact API key from error logs
+                logger.warning("Failed to send events: " + redactSensitiveInfo(e.getMessage()));
 
                 if (plugin.getConfig().getBoolean("debug.enabled", false)) {
                     logger.warning("Network error details: " + e.getClass().getSimpleName());
@@ -378,6 +380,7 @@ public class EventCollector {
      * Redact sensitive information (API key) from logs
      */
     private String redactSensitiveInfo(String text) {
+        if (text == null) return "null";
         if (this.apiKey != null && !this.apiKey.isEmpty() && text.contains(this.apiKey)) {
             return text.replace(this.apiKey, "[REDACTED]");
         }
