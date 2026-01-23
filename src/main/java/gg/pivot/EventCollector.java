@@ -325,16 +325,17 @@ public class EventCollector {
             @Override
             public void onResponse(Call call, Response response) {
                 try {
+                    String usedApiKey = call.request().header("X-API-Key");
                     if (response.isSuccessful()) {
                         String apiVersion = response.header("X-API-Version");
                         logger.info("Connected to Pivot API version: " + apiVersion);
                         String responseBody = response.body() != null ? response.body().string() : "no body";
-                        logger.info("Successfully sent events: " + redactSensitiveInfo(responseBody));
+                        logger.info("Successfully sent events: " + redactSensitiveInfo(responseBody, usedApiKey));
                     } else {
                         String errorBody = response.body() != null ? response.body().string() : "no error details";
 
                         // SECURITY: Redact API key from error logs if it appears in the response
-                        errorBody = redactSensitiveInfo(errorBody);
+                        errorBody = redactSensitiveInfo(errorBody, usedApiKey);
 
                         logger.warning("Failed to send events: " + response.code() + " - " + errorBody);
 
@@ -361,15 +362,17 @@ public class EventCollector {
         Request request = buildRequest(json);
         if (request == null) return;
 
+        String usedApiKey = request.header("X-API-Key");
+
         try (Response response = httpClient.newCall(request).execute()) {
             if (response.isSuccessful()) {
                 String apiVersion = response.header("X-API-Version");
                 logger.info("Connected to Pivot API version: " + apiVersion);
                 String responseBody = response.body() != null ? response.body().string() : "no body";
-                logger.info("Successfully sent events: " + redactSensitiveInfo(responseBody));
+                logger.info("Successfully sent events: " + redactSensitiveInfo(responseBody, usedApiKey));
             } else {
                 String errorBody = response.body() != null ? response.body().string() : "no error details";
-                logger.warning("Failed to send events: " + response.code() + " - " + redactSensitiveInfo(errorBody));
+                logger.warning("Failed to send events: " + response.code() + " - " + redactSensitiveInfo(errorBody, usedApiKey));
             }
         }
     }
@@ -377,9 +380,9 @@ public class EventCollector {
     /**
      * Redact sensitive information (API key) from logs
      */
-    private String redactSensitiveInfo(String text) {
-        if (this.apiKey != null && !this.apiKey.isEmpty() && text.contains(this.apiKey)) {
-            return text.replace(this.apiKey, "[REDACTED]");
+    private String redactSensitiveInfo(String text, String apiKey) {
+        if (apiKey != null && !apiKey.isEmpty() && text.contains(apiKey)) {
+            return text.replace(apiKey, "[REDACTED]");
         }
         return text;
     }
