@@ -155,8 +155,16 @@ public class PivotPlugin extends JavaPlugin {
         int batchInterval = getConfig().getInt("collection.batch-interval", 60);
         int tpsInterval = getConfig().getInt("collection.tps-sample-interval", 30);
 
-        if (batchInterval < 10) {
+        if (batchInterval <= 0) {
+            logger.severe("collection.batch-interval must be greater than 0!");
+            valid = false;
+        } else if (batchInterval < 10) {
             logger.warning("batch-interval is very low (" + batchInterval + "s). Recommended: 30-60s");
+        }
+
+        if (tpsInterval <= 0) {
+            logger.severe("collection.tps-sample-interval must be greater than 0!");
+            valid = false;
         }
 
         if (tpsInterval >= batchInterval) {
@@ -208,8 +216,19 @@ public class PivotPlugin extends JavaPlugin {
             try {
                 Path path = configFile.toPath();
                 Set<PosixFilePermission> permissions = Files.getPosixFilePermissions(path);
-                if (permissions.contains(PosixFilePermission.OTHERS_READ)) {
-                    logger.warning("SECURITY WARNING: config.yml is world-readable!");
+                boolean insecure = false;
+
+                if (permissions.contains(PosixFilePermission.OTHERS_READ) || permissions.contains(PosixFilePermission.GROUP_READ)) {
+                    logger.warning("SECURITY WARNING: config.yml is readable by other users (Group/Others)!");
+                    insecure = true;
+                }
+
+                if (permissions.contains(PosixFilePermission.OTHERS_WRITE) || permissions.contains(PosixFilePermission.GROUP_WRITE)) {
+                    logger.warning("SECURITY WARNING: config.yml is writable by other users (Group/Others)!");
+                    insecure = true;
+                }
+
+                if (insecure) {
                     logger.warning("Please restrict file permissions (chmod 600) to protect your API key.");
                 }
             } catch (UnsupportedOperationException e) {
