@@ -186,7 +186,12 @@ public class PivotPlugin extends JavaPlugin {
         if (apiKey == null || apiKey.equals("not set") || apiKey.equals("paste_your_key_here")) {
             maskedKey = "NOT CONFIGURED";
         } else {
-            maskedKey = "***" + apiKey.substring(Math.max(0, apiKey.length() - 4));
+            // SECURITY: Mask API key to prevent exposure while allowing verification
+            if (apiKey.length() > 8) {
+                maskedKey = apiKey.substring(0, 4) + "***" + apiKey.substring(apiKey.length() - 4);
+            } else {
+                maskedKey = "Configured (Hidden)";
+            }
         }
 
         logger.info("Configuration:");
