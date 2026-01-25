@@ -87,16 +87,10 @@ public class EventCollector {
         event.addProperty("timestamp", System.currentTimeMillis());
         event.addProperty("event_type", eventType);
 
-        // FEATURE: UUID anonymization
-        boolean anonymize = plugin.getConfig().getBoolean("privacy.anonymize-players", false);
-        if (anonymize) {
-            String hashedUuid = hashUuid(playerUuid);
-            event.addProperty("player_uuid", hashedUuid);
-            event.addProperty("player_name", "Player"); // Generic name for privacy
-        } else {
-            event.addProperty("player_uuid", playerUuid);
-            event.addProperty("player_name", playerName);
-        }
+        // ⚡ Bolt Optimization: Store raw data here, anonymize in async flush()
+        // This prevents SHA-256 hashing from blocking the main thread
+        event.addProperty("player_uuid", playerUuid);
+        event.addProperty("player_name", playerName);
 
         // Only add hostname if tracking enabled and not null
         boolean trackHostnames = plugin.getConfig().getBoolean("privacy.track-hostnames", true);
@@ -206,7 +200,7 @@ public class EventCollector {
             logger.info("Flush called - checking for events to send");
         }
 
-        // ⚡ Bolt Optimization: Early return if queues empty to avoid ArrayList allocations
+        // ⚡ Bolt Optimization: Early return if queues empty to avoid allocations
         if (playerEvents.isEmpty() && performanceEvents.isEmpty() && serverEvents.isEmpty()) {
             if (debugEnabled) {
                 logger.info("No events to send");
@@ -214,52 +208,48 @@ public class EventCollector {
             return;
         }
 
-        // Drain queues into local batches
-        List<JsonObject> playerBatch = new ArrayList<>();
+        // ⚡ Bolt Optimization: Drain directly to JsonArray and anonymize async
+        boolean anonymize = plugin.getConfig().getBoolean("privacy.anonymize-players", false);
+
+        JsonArray playerArray = new JsonArray();
         JsonObject polledEvent;
         while ((polledEvent = playerEvents.poll()) != null) {
-            playerBatch.add(polledEvent);
+            if (anonymize) {
+                if (polledEvent.has("player_uuid")) {
+                    String rawUuid = polledEvent.get("player_uuid").getAsString();
+                    polledEvent.addProperty("player_uuid", hashUuid(rawUuid));
+                }
+                if (polledEvent.has("player_name")) {
+                    polledEvent.addProperty("player_name", "Player");
+                }
+            }
+            playerArray.add(polledEvent);
         }
 
-        List<JsonObject> perfBatch = new ArrayList<>();
+        JsonArray perfArray = new JsonArray();
         while ((polledEvent = performanceEvents.poll()) != null) {
-            perfBatch.add(polledEvent);
+            perfArray.add(polledEvent);
         }
 
-        List<JsonObject> serverBatch = new ArrayList<>();
+        JsonArray serverArray = new JsonArray();
         while ((polledEvent = serverEvents.poll()) != null) {
-            serverBatch.add(polledEvent);
+            serverArray.add(polledEvent);
         }
 
         if (debugEnabled) {
-            logger.info("Events to send - Player: " + playerBatch.size() + ", Performance: " + perfBatch.size() + ", Server: " + serverBatch.size());
+            logger.info("Events to send - Player: " + playerArray.size() + ", Performance: " + perfArray.size() + ", Server: " + serverArray.size());
         }
 
-        // Nothing to send (double check after drain)
-        if (playerBatch.isEmpty() && perfBatch.isEmpty() && serverBatch.isEmpty()) {
+        // Nothing to send
+        if (playerArray.size() == 0 && perfArray.size() == 0 && serverArray.size() == 0) {
             return;
         }
 
         // Build JSON payload
         JsonObject payload = new JsonObject();
         payload.addProperty("batch_timestamp", System.currentTimeMillis());
-
-        JsonArray playerArray = new JsonArray();
-        for (JsonObject event : playerBatch) {
-            playerArray.add(event);
-        }
         payload.add("player_events", playerArray);
-
-        JsonArray perfArray = new JsonArray();
-        for (JsonObject event : perfBatch) {
-            perfArray.add(event);
-        }
         payload.add("performance_events", perfArray);
-
-        JsonArray serverArray = new JsonArray();
-        for (JsonObject event : serverBatch) {
-            serverArray.add(event);
-        }
         payload.add("server_events", serverArray);
 
         String json = payload.toString();
