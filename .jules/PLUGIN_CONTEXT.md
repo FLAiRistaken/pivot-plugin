@@ -281,6 +281,10 @@ boolean debugEnabled = plugin.getConfig().getBoolean("debug.enabled", false);
 - Batch events (don't send per-event)
 - Limit queue size to prevent memory leaks
 - Use efficient JSON serialization (Gson)
+- **Bolt Optimizations:**
+  - Defer anonymization (hashing) to async flush task
+  - Direct queue draining to JsonArray (avoids intermediate allocations)
+  - Lazy TPS calculation and cached server instances
 
 ### TPS Detection
 **3 methods in priority order:**

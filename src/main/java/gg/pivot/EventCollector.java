@@ -23,6 +23,14 @@ import java.util.logging.Logger;
  * efficiently without blocking the main server thread. Events are flushed periodically
  * by an asynchronous task in {@link PivotPlugin}.
  * </p>
+ * <p>
+ * <b>Bolt Optimizations:</b>
+ * <ul>
+ *   <li>Uses non-blocking queues to avoid main thread contention.</li>
+ *   <li>Defers heavy operations (like UUID hashing) to the async flush task.</li>
+ *   <li>Drains queues directly to JSON arrays to minimize allocations.</li>
+ * </ul>
+ * </p>
  */
 public class EventCollector {
     private final PivotPlugin plugin;

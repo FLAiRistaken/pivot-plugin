@@ -21,6 +21,13 @@ import java.util.logging.Logger;
  *   <li>Manual Calculation - Fallback that measures tick duration (works on all versions)</li>
  * </ol>
  * </p>
+ * <p>
+ * <b>Bolt Optimizations:</b>
+ * <ul>
+ *   <li>Caches {@code MinecraftServer} instance to avoid repeated reflection lookups.</li>
+ *   <li>Calculates TPS lazily on demand (in {@code getTPS()}) rather than every tick to minimize main thread impact.</li>
+ * </ul>
+ * </p>
  */
 public class TPSUtil {
     private static Method paperGetTPSMethod = null;
