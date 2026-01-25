@@ -1,9 +1,9 @@
 # Pivot Analytics API Contract
 
-**Version:** 1.3.0
+**Version:** 1.4.0
 **Base URL:** `https://api.pivotmc.dev/v1`
 **Environment:** Production
-**Last Updated:** January 10, 2026
+**Last Updated:** January 25, 2026
 
 ---
 
@@ -18,6 +18,8 @@
    - [Event Ingestion](#event-ingestion-endpoints)
    - [Analytics](#analytics-endpoints)
    - [Downloads](#downloads-endpoints)
+   - [User Settings](#user-settings-endpoints)
+   - [Billing](#billing-endpoints)
 5. [Data Types & Models](#data-types--models)
 
 ---
@@ -253,6 +255,54 @@ Authenticate existing user.
     }
   }
   ```
+
+---
+
+#### `POST /v1/auth/forgot-password`
+
+Request password reset email.
+
+**Request Body:**
+```json
+{
+  "email": "user@example.com"
+}
+```
+
+**Success Response (200 OK):**
+```json
+{
+  "message": "If the email exists, a password reset link has been sent."
+}
+```
+
+**Notes:**
+- Always returns success to prevent email enumeration.
+- Rate limited: 5/hour.
+
+---
+
+#### `POST /v1/auth/reset-password`
+
+Reset password using token from email.
+
+**Request Body:**
+```json
+{
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "new_password": "newsecurepassword123"
+}
+```
+
+**Success Response (200 OK):**
+```json
+{
+  "message": "Password reset successful"
+}
+```
+
+**Error Responses:**
+- `400 Bad Request`: Invalid or expired token
 
 ---
 
@@ -1315,7 +1365,50 @@ GET /v1/analytics/servers/f86dfb9d-f74e-40dd-8c62-4c53833d1477/insights?hours=24
 5. Hostname Health
 6. Weekend Patterns
 7. Retention Analysis
+7. Retention Analysis
 8. Peak Time Detection
+
+---
+
+#### `GET /v1/analytics/servers/{server_id}/lifecycle`
+
+Get server lifecycle history (uptime, crashes, restarts).
+
+**Authentication:** Required (JWT)
+
+**Rate Limit:** 100 requests/hour
+
+**Path Parameters:**
+- `server_id` (UUID): Server identifier
+
+**Query Parameters:**
+- `hours` (int, default=720): Time window for timeline
+- `days` (int, default=30): Time window for stats
+
+**Success Response (200 OK):**
+```json
+{
+  "server_id": "f86dfb9d-f74e-40dd-8c62-4c53833d1477",
+  "stats": {
+    "uptime_percentage": 99.8,
+    "mtbf_hours": 124.5,
+    "crash_count": 2,
+    "restart_count": 5
+  },
+  "events": [
+    {
+      "timestamp": "2026-01-20T14:00:00Z",
+      "type": "start",
+      "duration_seconds": null
+    },
+    {
+      "timestamp": "2026-01-20T13:58:00Z",
+      "type": "stop",
+      "duration_seconds": 34500
+    }
+  ]
+}
+```
 
 ---
 
@@ -1342,6 +1435,169 @@ Download the latest Pivot Analytics plugin JAR file.
     }
   }
   ```
+
+---
+
+### User Settings Endpoints
+
+#### `GET /v1/user/profile`
+
+Get current user profile.
+
+**Authentication:** Required (JWT)
+
+**Success Response (200 OK):**
+```json
+{
+  "id": "4fc857d6-27a1-497e-b02c-98be2683b4bf",
+  "email": "user@example.com",
+  "full_name": "John Doe",
+  "timezone": "UTC",
+  "is_active": true,
+  "subscription_tier": "free",
+  "created_at": "2026-01-07T10:00:00Z"
+}
+```
+
+---
+
+#### `PATCH /v1/user/profile`
+
+Update user profile details.
+
+**Authentication:** Required (JWT)
+
+**Request Body:**
+```json
+{
+  "full_name": "Jane Doe",
+  "timezone": "America/New_York"
+}
+```
+*Partial updates allowed.*
+
+**Success Response (200 OK):** Returns updated user object.
+
+---
+
+#### `GET /v1/user/preferences`
+
+Get user preferences (UI settings, notifications).
+
+**Authentication:** Required (JWT)
+
+**Success Response (200 OK):**
+```json
+{
+  "theme": "system",
+  "email_notifications": true,
+  "beta_features": false
+}
+```
+
+---
+
+#### `PATCH /v1/user/preferences`
+
+Update user preferences. Deep merge supported.
+
+**Authentication:** Required (JWT)
+
+**Request Body:**
+```json
+{
+  "theme": "dark"
+}
+```
+
+**Success Response (200 OK):** Returns updated preferences object.
+
+---
+
+#### `POST /v1/user/change-password`
+
+Change current password.
+
+**Authentication:** Required (JWT)
+
+**Request Body:**
+```json
+{
+  "current_password": "oldpassword123",
+  "new_password": "newpassword123"
+}
+```
+
+**Success Response (200 OK):**
+```json
+{
+  "message": "Password updated successfully"
+}
+```
+
+---
+
+### Billing Endpoints
+
+#### `POST /v1/billing/create-checkout-session`
+
+Create Stripe Checkout session for subscription upgrade.
+
+**Authentication:** Required (JWT)
+
+**Request Body:**
+```json
+{
+  "tier": "pro",
+  "success_url": "https://app.pivotmc.dev/settings/billing?success=true",
+  "cancel_url": "https://app.pivotmc.dev/settings/billing?canceled=true"
+}
+```
+
+**Success Response (200 OK):**
+```json
+{
+  "checkout_url": "https://checkout.stripe.com/c/pay/cs_test_..."
+}
+```
+
+---
+
+#### `POST /v1/billing/create-portal-session`
+
+Create Stripe Customer Portal session for managing subscription.
+
+**Authentication:** Required (JWT)
+
+**Success Response (200 OK):**
+```json
+{
+  "portal_url": "https://billing.stripe.com/p/session/..."
+}
+```
+
+---
+
+#### `GET /v1/billing/subscription`
+
+Get current subscription status and usage.
+
+**Authentication:** Required (JWT)
+
+**Success Response (200 OK):**
+```json
+{
+  "tier": "free",
+  "status": "active",
+  "current_period_end": null,
+  "cancel_at_period_end": false,
+  "usage": {
+    "servers": 1,
+    "server_limit": 1
+  },
+  "data_retention_days": 7
+}
+```
 
 ---
 
