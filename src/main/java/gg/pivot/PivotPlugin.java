@@ -139,6 +139,14 @@ public class PivotPlugin extends JavaPlugin {
             // SECURITY: Enforce API key format to prevent misconfiguration
             logger.severe("API key is invalid! It must start with 'pvt_'");
             valid = false;
+        } else if (apiKey.length() < 20) {
+            // SECURITY: Enforce minimum length for API key to prevent weak keys
+            logger.severe("API key is too short! It must be at least 20 characters.");
+            valid = false;
+        } else if (!apiKey.matches("^[a-zA-Z0-9_]+$")) {
+            // SECURITY: Enforce allowed characters
+            logger.severe("API key contains invalid characters! Only alphanumeric and underscores allowed.");
+            valid = false;
         }
 
         // Check API endpoint
