@@ -5,6 +5,12 @@ import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.scheduler.BukkitTask;
 
+import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermission;
+import java.util.Set;
 import java.util.logging.Logger;
 
 /**
@@ -46,6 +52,9 @@ public class PivotPlugin extends JavaPlugin {
 
         // Log configuration (with API key masking)
         logConfiguration();
+
+        // Security check for config file permissions
+        checkConfigPermissions();
 
         // Initialize TPS detection
         TPSUtil.initialize(this, logger);
@@ -112,17 +121,31 @@ public class PivotPlugin extends JavaPlugin {
     /**
      * Validate configuration on startup
      */
-    private boolean validateConfig() {
+    public boolean validateConfig() {
         boolean valid = true;
 
         // Check API key
         String apiKey = getConfig().getString("api.key", "");
+        if (apiKey != null) {
+            apiKey = apiKey.trim(); // TRIM WHITESPACE
+        } else {
+            apiKey = "";
+        }
+
         if (apiKey.isEmpty() || apiKey.equals("paste_your_key_here")) {
             logger.severe("API key not configured! Get your key from https://app.pivotmc.dev");
             valid = false;
         } else if (!apiKey.startsWith("pvt_")) {
             // SECURITY: Enforce API key format to prevent misconfiguration
             logger.severe("API key is invalid! It must start with 'pvt_'");
+            valid = false;
+        } else if (apiKey.length() < 20) {
+            // SECURITY: Enforce minimum length for API key to prevent weak keys
+            logger.severe("API key is too short! It must be at least 20 characters.");
+            valid = false;
+        } else if (!apiKey.matches("^[a-zA-Z0-9_]+$")) {
+            // SECURITY: Enforce allowed characters
+            logger.severe("API key contains invalid characters! Only alphanumeric and underscores allowed.");
             valid = false;
         }
 
@@ -140,8 +163,16 @@ public class PivotPlugin extends JavaPlugin {
         int batchInterval = getConfig().getInt("collection.batch-interval", 60);
         int tpsInterval = getConfig().getInt("collection.tps-sample-interval", 30);
 
-        if (batchInterval < 10) {
+        if (batchInterval <= 0) {
+            logger.severe("collection.batch-interval must be greater than 0!");
+            valid = false;
+        } else if (batchInterval < 10) {
             logger.warning("batch-interval is very low (" + batchInterval + "s). Recommended: 30-60s");
+        }
+
+        if (tpsInterval <= 0) {
+            logger.severe("collection.tps-sample-interval must be greater than 0!");
+            valid = false;
         }
 
         if (tpsInterval >= batchInterval) {
@@ -157,11 +188,18 @@ public class PivotPlugin extends JavaPlugin {
      */
     private void logConfiguration() {
         String apiKey = getConfig().getString("api.key", "not set");
+        if (apiKey != null) apiKey = apiKey.trim(); // Trim whitespace
+
         String maskedKey;
-        if (apiKey.equals("not set") || apiKey.equals("paste_your_key_here")) {
+        if (apiKey == null || apiKey.equals("not set") || apiKey.equals("paste_your_key_here")) {
             maskedKey = "NOT CONFIGURED";
         } else {
-            maskedKey = "***" + apiKey.substring(Math.max(0, apiKey.length() - 4));
+            // SECURITY: Mask API key to prevent exposure while allowing verification
+            if (apiKey.length() > 8) {
+                maskedKey = apiKey.substring(0, 4) + "***" + apiKey.substring(apiKey.length() - 4);
+            } else {
+                maskedKey = "Configured (Hidden)";
+            }
         }
 
         logger.info("Configuration:");
@@ -180,6 +218,38 @@ public class PivotPlugin extends JavaPlugin {
         }
 
         logger.info("  Debug Mode: " + getConfig().getBoolean("debug.enabled", false));
+    }
+
+    /**
+     * Check if config.yml is world-readable (security risk)
+     */
+    private void checkConfigPermissions() {
+        File configFile = new File(getDataFolder(), "config.yml");
+        if (configFile.exists()) {
+            try {
+                Path path = configFile.toPath();
+                Set<PosixFilePermission> permissions = Files.getPosixFilePermissions(path);
+                boolean insecure = false;
+
+                if (permissions.contains(PosixFilePermission.OTHERS_READ) || permissions.contains(PosixFilePermission.GROUP_READ)) {
+                    logger.warning("SECURITY WARNING: config.yml is readable by other users (Group/Others)!");
+                    insecure = true;
+                }
+
+                if (permissions.contains(PosixFilePermission.OTHERS_WRITE) || permissions.contains(PosixFilePermission.GROUP_WRITE)) {
+                    logger.warning("SECURITY WARNING: config.yml is writable by other users (Group/Others)!");
+                    insecure = true;
+                }
+
+                if (insecure) {
+                    logger.warning("Please restrict file permissions (chmod 600) to protect your API key.");
+                }
+            } catch (UnsupportedOperationException e) {
+                // Not a POSIX system (e.g. Windows), skip check
+            } catch (IOException e) {
+                logger.warning("Failed to check config.yml permissions: " + e.getMessage());
+            }
+        }
     }
 
     /**

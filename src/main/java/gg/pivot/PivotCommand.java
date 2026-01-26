@@ -74,10 +74,21 @@ public class PivotCommand implements CommandExecutor, TabCompleter {
         String apiKey = plugin.getConfig().getString("api.key", "");
         boolean configured = !apiKey.isEmpty() && !apiKey.equals("paste_your_key_here");
 
+        String displayKey;
+        if (configured) {
+            // SECURITY: Mask API key to prevent exposure while allowing verification
+            if (apiKey.length() > 8) {
+                displayKey = apiKey.substring(0, 4) + "***" + apiKey.substring(apiKey.length() - 4);
+            } else {
+                displayKey = "Configured (Hidden)";
+            }
+        } else {
+            displayKey = ChatColor.RED + "NOT SET";
+        }
+
         sender.sendMessage(ChatColor.AQUA + "Configuration:");
         sender.sendMessage("  " + (configured ? ChatColor.GREEN + "✓" : ChatColor.RED + "✗")
-                + ChatColor.WHITE + " API Key: "
-                + (configured ? "Configured" : ChatColor.RED + "NOT SET"));
+                + ChatColor.WHITE + " API Key: " + ChatColor.GRAY + displayKey);
 
         String endpoint = plugin.getConfig().getString("api.endpoint", "not set");
         sender.sendMessage("  " + ChatColor.WHITE + "Endpoint: " + ChatColor.GRAY + endpoint);
@@ -151,6 +162,13 @@ public class PivotCommand implements CommandExecutor, TabCompleter {
         try {
             // Reload config
             plugin.reloadConfig();
+
+            // Validate new config before applying
+            if (!plugin.validateConfig()) {
+                sender.sendMessage(ChatColor.RED + "✗ Configuration validation failed!");
+                sender.sendMessage(ChatColor.RED + "Please check console for details and fix config.yml.");
+                return true;
+            }
 
             // Restart tasks with new intervals
             plugin.restartTasks();

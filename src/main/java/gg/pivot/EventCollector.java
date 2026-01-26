@@ -23,6 +23,14 @@ import java.util.logging.Logger;
  * efficiently without blocking the main server thread. Events are flushed periodically
  * by an asynchronous task in {@link PivotPlugin}.
  * </p>
+ * <p>
+ * <b>Bolt Optimizations:</b>
+ * <ul>
+ *   <li>Uses non-blocking queues to avoid main thread contention.</li>
+ *   <li>Defers heavy operations (like UUID hashing) to the async flush task.</li>
+ *   <li>Drains queues directly to JSON arrays to minimize allocations.</li>
+ * </ul>
+ * </p>
  */
 public class EventCollector {
     private final PivotPlugin plugin;
@@ -45,7 +53,10 @@ public class EventCollector {
     public EventCollector(PivotPlugin plugin) {
         this.plugin = plugin;
         this.logger = plugin.getLogger();
-        this.apiKey = plugin.getConfig().getString("api.key");
+
+        String key = plugin.getConfig().getString("api.key");
+        this.apiKey = key != null ? key.trim() : null; // SECURITY: Trim whitespace to prevent leakage
+
         // SECURITY: Set explicit timeouts to prevent resource exhaustion
         this.httpClient = new OkHttpClient.Builder()
                 .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
@@ -58,7 +69,8 @@ public class EventCollector {
      * Reloads configuration values (API key)
      */
     public void reload() {
-        this.apiKey = plugin.getConfig().getString("api.key");
+        String key = plugin.getConfig().getString("api.key");
+        this.apiKey = key != null ? key.trim() : null; // SECURITY: Trim whitespace
     }
 
     /**
@@ -83,16 +95,10 @@ public class EventCollector {
         event.addProperty("timestamp", System.currentTimeMillis());
         event.addProperty("event_type", eventType);
 
-        // FEATURE: UUID anonymization
-        boolean anonymize = plugin.getConfig().getBoolean("privacy.anonymize-players", false);
-        if (anonymize) {
-            String hashedUuid = hashUuid(playerUuid);
-            event.addProperty("player_uuid", hashedUuid);
-            event.addProperty("player_name", "Player"); // Generic name for privacy
-        } else {
-            event.addProperty("player_uuid", playerUuid);
-            event.addProperty("player_name", playerName);
-        }
+        // ⚡ Bolt Optimization: Store raw data here, anonymize in async flush()
+        // This prevents SHA-256 hashing from blocking the main thread
+        event.addProperty("player_uuid", playerUuid);
+        event.addProperty("player_name", playerName);
 
         // Only add hostname if tracking enabled and not null
         boolean trackHostnames = plugin.getConfig().getBoolean("privacy.track-hostnames", true);
@@ -202,62 +208,64 @@ public class EventCollector {
             logger.info("Flush called - checking for events to send");
         }
 
-        // Drain queues into local batches
-        List<JsonObject> playerBatch = new ArrayList<>();
-        JsonObject polledEvent;
-        while ((polledEvent = playerEvents.poll()) != null) {
-            playerBatch.add(polledEvent);
-        }
-
-        List<JsonObject> perfBatch = new ArrayList<>();
-        while ((polledEvent = performanceEvents.poll()) != null) {
-            perfBatch.add(polledEvent);
-        }
-
-        List<JsonObject> serverBatch = new ArrayList<>();
-        while ((polledEvent = serverEvents.poll()) != null) {
-            serverBatch.add(polledEvent);
-        }
-
-        if (debugEnabled) {
-            logger.info("Events to send - Player: " + playerBatch.size() + ", Performance: " + perfBatch.size() + ", Server: " + serverBatch.size());
-        }
-
-        // Nothing to send
-        if (playerBatch.isEmpty() && perfBatch.isEmpty() && serverBatch.isEmpty()) {
+        // ⚡ Bolt Optimization: Early return if queues empty to avoid allocations
+        if (playerEvents.isEmpty() && performanceEvents.isEmpty() && serverEvents.isEmpty()) {
             if (debugEnabled) {
                 logger.info("No events to send");
             }
             return;
         }
 
+        // ⚡ Bolt Optimization: Drain directly to JsonArray and anonymize async
+        boolean anonymize = plugin.getConfig().getBoolean("privacy.anonymize-players", false);
+
+        JsonArray playerArray = new JsonArray();
+        JsonObject polledEvent;
+        while ((polledEvent = playerEvents.poll()) != null) {
+            if (anonymize) {
+                if (polledEvent.has("player_uuid")) {
+                    String rawUuid = polledEvent.get("player_uuid").getAsString();
+                    polledEvent.addProperty("player_uuid", hashUuid(rawUuid));
+                }
+                if (polledEvent.has("player_name")) {
+                    polledEvent.addProperty("player_name", "Player");
+                }
+            }
+            playerArray.add(polledEvent);
+        }
+
+        JsonArray perfArray = new JsonArray();
+        while ((polledEvent = performanceEvents.poll()) != null) {
+            perfArray.add(polledEvent);
+        }
+
+        JsonArray serverArray = new JsonArray();
+        while ((polledEvent = serverEvents.poll()) != null) {
+            serverArray.add(polledEvent);
+        }
+
+        if (debugEnabled) {
+            logger.info("Events to send - Player: " + playerArray.size() + ", Performance: " + perfArray.size() + ", Server: " + serverArray.size());
+        }
+
+        // Nothing to send
+        if (playerArray.size() == 0 && perfArray.size() == 0 && serverArray.size() == 0) {
+            return;
+        }
+
         // Build JSON payload
         JsonObject payload = new JsonObject();
         payload.addProperty("batch_timestamp", System.currentTimeMillis());
-
-        JsonArray playerArray = new JsonArray();
-        for (JsonObject event : playerBatch) {
-            playerArray.add(event);
-        }
         payload.add("player_events", playerArray);
-
-        JsonArray perfArray = new JsonArray();
-        for (JsonObject event : perfBatch) {
-            perfArray.add(event);
-        }
         payload.add("performance_events", perfArray);
-
-        JsonArray serverArray = new JsonArray();
-        for (JsonObject event : serverBatch) {
-            serverArray.add(event);
-        }
         payload.add("server_events", serverArray);
 
         String json = payload.toString();
 
         // Log full payload if debug enabled
         if (logBatches) {
-            logger.info("Sending batch payload: " + json);
+            // SECURITY: Redact PII from debug logs
+            logger.info("Sending batch payload: " + redactPii(json));
         }
 
         // Send to API
@@ -315,16 +323,17 @@ public class EventCollector {
             @Override
             public void onResponse(Call call, Response response) {
                 try {
+                    String usedApiKey = call.request().header("X-API-Key");
                     if (response.isSuccessful()) {
                         String apiVersion = response.header("X-API-Version");
                         logger.info("Connected to Pivot API version: " + apiVersion);
                         String responseBody = response.body() != null ? response.body().string() : "no body";
-                        logger.info("Successfully sent events: " + redactSensitiveInfo(responseBody));
+                        logger.info("Successfully sent events: " + redactSensitiveInfo(responseBody, usedApiKey));
                     } else {
                         String errorBody = response.body() != null ? response.body().string() : "no error details";
 
                         // SECURITY: Redact API key from error logs if it appears in the response
-                        errorBody = redactSensitiveInfo(errorBody);
+                        errorBody = redactSensitiveInfo(errorBody, usedApiKey);
 
                         logger.warning("Failed to send events: " + response.code() + " - " + errorBody);
 
@@ -351,15 +360,17 @@ public class EventCollector {
         Request request = buildRequest(json);
         if (request == null) return;
 
+        String usedApiKey = request.header("X-API-Key");
+
         try (Response response = httpClient.newCall(request).execute()) {
             if (response.isSuccessful()) {
                 String apiVersion = response.header("X-API-Version");
                 logger.info("Connected to Pivot API version: " + apiVersion);
                 String responseBody = response.body() != null ? response.body().string() : "no body";
-                logger.info("Successfully sent events: " + redactSensitiveInfo(responseBody));
+                logger.info("Successfully sent events: " + redactSensitiveInfo(responseBody, usedApiKey));
             } else {
                 String errorBody = response.body() != null ? response.body().string() : "no error details";
-                logger.warning("Failed to send events: " + response.code() + " - " + redactSensitiveInfo(errorBody));
+                logger.warning("Failed to send events: " + response.code() + " - " + redactSensitiveInfo(errorBody, usedApiKey));
             }
         }
     }
@@ -367,10 +378,36 @@ public class EventCollector {
     /**
      * Redact sensitive information (API key) from logs
      */
-    private String redactSensitiveInfo(String text) {
-        if (this.apiKey != null && !this.apiKey.isEmpty() && text.contains(this.apiKey)) {
-            return text.replace(this.apiKey, "[REDACTED]");
+    private String redactSensitiveInfo(String text, String apiKey) {
+        if (apiKey != null && !apiKey.isEmpty() && text.contains(apiKey)) {
+            return text.replace(apiKey, "[REDACTED]");
         }
         return text;
+    }
+
+    /**
+     * Redact PII (UUIDs, names, hostnames) from JSON payload for logging
+     */
+    private String redactPii(String json) {
+        try {
+            JsonObject obj = com.google.gson.JsonParser.parseString(json).getAsJsonObject();
+            if (obj.has("player_events")) {
+                JsonArray players = obj.getAsJsonArray("player_events");
+                // Need to clone or rebuild to avoid modifying the original array if we were modifying objects in place
+                // But parseString creates a NEW structure, so we are safe to modify 'obj'
+                for (com.google.gson.JsonElement e : players) {
+                    if (e.isJsonObject()) {
+                        JsonObject p = e.getAsJsonObject();
+                        if (p.has("player_uuid")) p.addProperty("player_uuid", "[REDACTED]");
+                        if (p.has("player_name")) p.addProperty("player_name", "[REDACTED]");
+                        if (p.has("hostname")) p.addProperty("hostname", "[REDACTED]");
+                    }
+                }
+            }
+            return obj.toString();
+        } catch (Exception e) {
+            // Fallback if parsing fails
+            return "[Unable to redact PII - Payload Hidden]";
+        }
     }
 }

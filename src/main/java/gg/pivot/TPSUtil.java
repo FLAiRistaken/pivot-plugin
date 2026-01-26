@@ -21,6 +21,13 @@ import java.util.logging.Logger;
  *   <li>Manual Calculation - Fallback that measures tick duration (works on all versions)</li>
  * </ol>
  * </p>
+ * <p>
+ * <b>Bolt Optimizations:</b>
+ * <ul>
+ *   <li>Caches {@code MinecraftServer} instance to avoid repeated reflection lookups.</li>
+ *   <li>Calculates TPS lazily on demand (in {@code getTPS()}) rather than every tick to minimize main thread impact.</li>
+ * </ul>
+ * </p>
  */
 public class TPSUtil {
     private static Method paperGetTPSMethod = null;
@@ -112,19 +119,8 @@ public class TPSUtil {
                     tickTimes.removeFirst();
                 }
 
-                // Calculate TPS from average tick duration
-                if (tickTimes.size() >= 20) { // Wait for at least 20 samples
-                    long sum = 0;
-                    for (long duration : tickTimes) {
-                        sum += duration;
-                    }
-                    long avgTickNanos = sum / tickTimes.size();
-
-                    // Convert to TPS (1 second = 1,000,000,000 nanoseconds)
-                    // Target: 50ms per tick = 20 TPS
-                    double avgTickMillis = avgTickNanos / 1_000_000.0;
-                    calculatedTPS = Math.min(20.0, 1000.0 / avgTickMillis);
-                }
+                // ⚡ Bolt Optimization: Don't calculate TPS every tick on main thread
+                // Calculation moved to getTPS() to be performed on demand (async)
             }
         }
 
@@ -162,7 +158,20 @@ public class TPSUtil {
 
         // Manual calculation (universal fallback)
         synchronized (tickTimes) {
-            return calculatedTPS;
+            // ⚡ Bolt Optimization: Calculate on demand instead of every tick
+            if (tickTimes.size() < 20) {
+                return 20.0;
+            }
+            long sum = 0;
+            for (long duration : tickTimes) {
+                sum += duration;
+            }
+            long avgTickNanos = sum / tickTimes.size();
+
+            // Convert to TPS (1 second = 1,000,000,000 nanoseconds)
+            // Target: 50ms per tick = 20 TPS
+            double avgTickMillis = avgTickNanos / 1_000_000.0;
+            return Math.min(20.0, 1000.0 / avgTickMillis);
         }
     }
 

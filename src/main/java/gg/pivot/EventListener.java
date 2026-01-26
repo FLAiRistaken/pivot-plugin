@@ -47,7 +47,7 @@ public class EventListener implements Listener {
      *
      * @param event The PlayerLoginEvent
      */
-    @EventHandler
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onPlayerLogin(PlayerLoginEvent event) {
         // Only capture hostname if tracking enabled
         if (!plugin.getConfig().getBoolean("privacy.track-hostnames", true)) {
@@ -62,9 +62,8 @@ public class EventListener implements Listener {
 
             if (plugin.getConfig().getBoolean("debug.enabled", false)) {
                 plugin.getLogger().info(String.format(
-                        "Player %s connecting via: %s",
-                        event.getPlayer().getName(),
-                        hostname
+                        "Player %s connecting via: [REDACTED]",
+                        event.getPlayer().getName()
                 ));
             }
         }
@@ -101,9 +100,8 @@ public class EventListener implements Listener {
 
         if (plugin.getConfig().getBoolean("debug.enabled", false)) {
             plugin.getLogger().info(String.format(
-                    "Player joined: %s (hostname: %s)",
-                    event.getPlayer().getName(),
-                    hostname != null ? hostname : "unknown"
+                    "Player joined: %s (hostname: [REDACTED])",
+                    event.getPlayer().getName()
             ));
         }
     }
