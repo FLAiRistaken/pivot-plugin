@@ -170,6 +170,9 @@ public class PivotCommand implements CommandExecutor, TabCompleter {
                 return true;
             }
 
+            // Security check for config file permissions
+            plugin.checkConfigPermissions();
+
             // Restart tasks with new intervals
             plugin.restartTasks();
 

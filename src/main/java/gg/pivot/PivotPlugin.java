@@ -223,7 +223,7 @@ public class PivotPlugin extends JavaPlugin {
     /**
      * Check if config.yml is world-readable (security risk)
      */
-    private void checkConfigPermissions() {
+    public void checkConfigPermissions() {
         File configFile = new File(getDataFolder(), "config.yml");
         if (configFile.exists()) {
             try {
