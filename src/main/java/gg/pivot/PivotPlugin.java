@@ -10,6 +10,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermission;
+import java.util.HashSet;
 import java.util.Set;
 import java.util.logging.Logger;
 
@@ -242,7 +243,18 @@ public class PivotPlugin extends JavaPlugin {
                 }
 
                 if (insecure) {
-                    logger.warning("Please restrict file permissions (chmod 600) to protect your API key.");
+                    logger.warning("Attempting to lock down config.yml permissions to 600 (Owner Read/Write)...");
+                    try {
+                        Set<PosixFilePermission> securePerms = new HashSet<>();
+                        securePerms.add(PosixFilePermission.OWNER_READ);
+                        securePerms.add(PosixFilePermission.OWNER_WRITE);
+
+                        Files.setPosixFilePermissions(path, securePerms);
+                        logger.info("SUCCESS: config.yml permissions secured.");
+                    } catch (IOException e) {
+                        logger.severe("FAILED to secure config.yml: " + e.getMessage());
+                        logger.warning("Please manually run: chmod 600 " + configFile.getAbsolutePath());
+                    }
                 }
             } catch (UnsupportedOperationException e) {
                 // Not a POSIX system (e.g. Windows), skip check
