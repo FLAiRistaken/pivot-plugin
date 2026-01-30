@@ -77,10 +77,11 @@ public class PivotCommand implements CommandExecutor, TabCompleter {
         String displayKey;
         if (configured) {
             // SECURITY: Mask API key to prevent exposure while allowing verification
-            if (apiKey.length() > 8) {
+            // Only show partial key if it meets minimum length requirements (20 chars)
+            if (apiKey.length() >= 20) {
                 displayKey = apiKey.substring(0, 4) + "***" + apiKey.substring(apiKey.length() - 4);
             } else {
-                displayKey = "Configured (Hidden)";
+                displayKey = "Configured (Invalid/Hidden)";
             }
         } else {
             displayKey = ChatColor.RED + "NOT SET";
