@@ -401,6 +401,7 @@ public class EventCollector {
                         if (p.has("player_uuid")) p.addProperty("player_uuid", "[REDACTED]");
                         if (p.has("player_name")) p.addProperty("player_name", "[REDACTED]");
                         if (p.has("hostname")) p.addProperty("hostname", "[REDACTED]");
+                        if (p.has("quit_reason")) p.addProperty("quit_reason", "[REDACTED]");
                     }
                 }
             }
