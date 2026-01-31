@@ -57,6 +57,13 @@ public class EventCollector {
         String key = plugin.getConfig().getString("api.key");
         this.apiKey = key != null ? key.trim() : null; // SECURITY: Trim whitespace to prevent leakage
 
+        // SECURITY: Validate API key format (High Priority)
+        // This ensures the collector doesn't run with an invalid key even if PivotPlugin validation was bypassed
+        if (this.apiKey == null || !this.apiKey.startsWith("pvt_") || this.apiKey.length() < 20) {
+            logger.warning("EventCollector initialized with invalid API key (must start with 'pvt_' and be >= 20 chars). Events will NOT be sent.");
+            this.apiKey = null; // Disable sending
+        }
+
         // SECURITY: Set explicit timeouts to prevent resource exhaustion
         this.httpClient = new OkHttpClient.Builder()
                 .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
@@ -70,7 +77,16 @@ public class EventCollector {
      */
     public void reload() {
         String key = plugin.getConfig().getString("api.key");
-        this.apiKey = key != null ? key.trim() : null; // SECURITY: Trim whitespace
+        String trimmedKey = key != null ? key.trim() : null; // SECURITY: Trim whitespace
+
+        // SECURITY: Validate API key format on reload
+        if (trimmedKey == null || !trimmedKey.startsWith("pvt_") || trimmedKey.length() < 20) {
+            logger.warning("EventCollector reload: Invalid API key. Keeping previous key (if valid) or disabling.");
+            // We could keep old key, or disable. Disabling is safer to avoid confusion if config is broken.
+            this.apiKey = null;
+        } else {
+            this.apiKey = trimmedKey;
+        }
     }
 
     /**
@@ -313,7 +329,14 @@ public class EventCollector {
         httpClient.newCall(request).enqueue(new Callback() {
             @Override
             public void onFailure(Call call, IOException e) {
-                logger.warning("Failed to send events: " + e.getMessage());
+                // SECURITY: Retrieve API key to ensure redaction (using request header)
+                String usedApiKey = call.request().header("X-API-Key");
+                String errorMsg = e.getMessage() != null ? e.getMessage() : "Unknown error";
+
+                // SECURITY: Redact sensitive info (API key and regex pattern) from exception message
+                errorMsg = redactSensitiveInfo(errorMsg, usedApiKey);
+
+                logger.warning("Failed to send events: " + errorMsg);
 
                 if (plugin.getConfig().getBoolean("debug.enabled", false)) {
                     logger.warning("Network error details: " + e.getClass().getSimpleName());
@@ -379,10 +402,18 @@ public class EventCollector {
      * Redact sensitive information (API key) from logs
      */
     private String redactSensitiveInfo(String text, String apiKey) {
-        if (apiKey != null && !apiKey.isEmpty() && text.contains(apiKey)) {
-            return text.replace(apiKey, "[REDACTED]");
+        String redacted = text;
+
+        // Redact specific key if known
+        if (apiKey != null && !apiKey.isEmpty()) {
+            redacted = redacted.replace(apiKey, "[REDACTED]");
         }
-        return text;
+
+        // SECURITY: Defense in Depth - Redact any pattern resembling an API key
+        // Matches "pvt_" followed by at least 10 alphanumeric/underscore characters
+        redacted = redacted.replaceAll("pvt_[a-zA-Z0-9_]{10,}", "pvt_***");
+
+        return redacted;
     }
 
     /**
