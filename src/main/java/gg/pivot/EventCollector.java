@@ -209,7 +209,8 @@ public class EventCollector {
         try {
             sendToAPISync(payload.toString());
         } catch (IOException e) {
-            logger.warning("Failed to send SERVER_STOP event: " + e.getMessage());
+            // SECURITY: Redact sensitive info (API key) from exception message
+            logger.warning("Failed to send SERVER_STOP event: " + redactSensitiveInfo(e.getMessage(), this.apiKey));
         }
     }
 
