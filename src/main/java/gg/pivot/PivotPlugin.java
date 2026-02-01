@@ -282,19 +282,7 @@ public class PivotPlugin extends JavaPlugin {
 
         // Start TPS monitoring task
         if (getConfig().getBoolean("collection.track-performance", true)) {
-            tpsTask = new BukkitRunnable() {
-                @Override
-                public void run() {
-                    int playerCount = getServer().getOnlinePlayers().size();
-                    double tps = TPSUtil.getTPS();
-                    eventCollector.addPerformanceEvent(tps, playerCount);
-
-                    if (getConfig().getBoolean("debug.enabled", false)) {
-                        logger.info(String.format("Sampled - Players: %d, TPS: %.2f", playerCount, tps));
-                    }
-                }
-            }.runTaskTimerAsynchronously(this, 0L, tpsIntervalTicks);
-
+            scheduleNextTpsSample(0L);
             logger.info("Started TPS monitoring (every " + tpsIntervalSeconds + "s)");
         }
 
@@ -308,6 +296,41 @@ public class PivotPlugin extends JavaPlugin {
         }.runTaskTimerAsynchronously(this, batchIntervalTicks, batchIntervalTicks);
 
         logger.info("Started event batching (every " + batchIntervalSeconds + "s)");
+    }
+
+    /**
+     * Schedules the next TPS sample with dynamic interval based on player count.
+     * ⚡ Bolt Optimization: Reduces sampling frequency when server is empty.
+     */
+    private void scheduleNextTpsSample(long delayTicks) {
+        if (!isEnabled()) return;
+
+        tpsTask = new BukkitRunnable() {
+            @Override
+            public void run() {
+                if (!isEnabled()) return;
+
+                // Capture data
+                int playerCount = getServer().getOnlinePlayers().size();
+                double tps = TPSUtil.getTPS();
+                eventCollector.addPerformanceEvent(tps, playerCount);
+
+                if (getConfig().getBoolean("debug.enabled", false)) {
+                    logger.info(String.format("Sampled - Players: %d, TPS: %.2f", playerCount, tps));
+                }
+
+                // Schedule next run
+                // ⚡ Bolt: Increase interval if 0 players to save resources
+                int baseInterval = getConfig().getInt("collection.tps-sample-interval", 30);
+                long nextDelay = baseInterval * 20L;
+
+                if (playerCount == 0) {
+                     nextDelay *= 4; // Increase delay if idle
+                }
+
+                scheduleNextTpsSample(nextDelay);
+            }
+        }.runTaskLaterAsynchronously(PivotPlugin.this, delayTicks);
     }
 
     /**
