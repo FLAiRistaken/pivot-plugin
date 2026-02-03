@@ -73,7 +73,12 @@ public class EventCollector {
     }
 
     /**
-     * Reloads configuration values (API key)
+     * Reloads configuration values (API key).
+     * <p>
+     * Updates the API key from the config file. Validates the key format
+     * (must start with 'pvt_' and be >= 20 chars). If invalid, the collector
+     * is disabled to prevent authentication errors.
+     * </p>
      */
     public void reload() {
         String key = plugin.getConfig().getString("api.key");
@@ -90,21 +95,33 @@ public class EventCollector {
     }
 
     /**
-     * Get current player event queue size (for /pivot status)
+     * Get current player event queue size.
+     *
+     * @return Number of queued player events.
      */
     public int getPlayerEventCount() {
         return playerEvents.size();
     }
 
     /**
-     * Get current performance event queue size (for /pivot status)
+     * Get current performance event queue size.
+     *
+     * @return Number of queued performance events.
      */
     public int getPerformanceEventCount() {
         return performanceEvents.size();
     }
 
     /**
-     * Add a player event (JOIN/QUIT)
+     * Add a player event (JOIN/QUIT) to the queue.
+     *
+     * @param eventType      The type of event (e.g., "PLAYER_JOIN", "PLAYER_QUIT").
+     * @param playerUuid     The UUID of the player.
+     * @param playerName     The name of the player.
+     * @param hostname       The hostname the player joined with (optional).
+     * @param quitReason     The reason for quitting (optional, for QUIT events).
+     * @param sessionClean   Whether the session ended cleanly (optional).
+     * @param connectionType The type of connection ("initial" or "reconnect").
      */
     public void addPlayerEvent(String eventType, String playerUuid, String playerName, String hostname, String quitReason, Boolean sessionClean, String connectionType) {
         JsonObject event = new JsonObject();
@@ -164,7 +181,10 @@ public class EventCollector {
     }
 
     /**
-     * Add a performance event (TPS sample)
+     * Add a performance event (TPS sample) to the queue.
+     *
+     * @param tps         The current server TPS (Ticks Per Second).
+     * @param playerCount The current number of online players.
      */
     public void addPerformanceEvent(double tps, int playerCount) {
         JsonObject event = new JsonObject();
@@ -176,7 +196,10 @@ public class EventCollector {
     }
 
     /**
-     * Add a server start event
+     * Add a server start event to the queue.
+     *
+     * @param serverVersion The version string of the server (e.g., "git-Paper-123").
+     * @param pluginsLoaded The number of plugins currently loaded.
      */
     public void addServerStartEvent(String serverVersion, int pluginsLoaded) {
         JsonObject event = new JsonObject();
@@ -189,7 +212,13 @@ public class EventCollector {
     }
 
     /**
-     * Send a server stop event synchronously
+     * Send a server stop event synchronously.
+     * <p>
+     * This is called during plugin disable. It bypasses the async queue to ensure
+     * the event is sent before the JVM shuts down.
+     * </p>
+     *
+     * @param reason The reason for the stop (usually "manual").
      */
     public void sendServerStopEvent(String reason) {
         JsonObject event = new JsonObject();
@@ -215,7 +244,15 @@ public class EventCollector {
     }
 
     /**
-     * Flush all collected events to API
+     * Flush all collected events to the API.
+     * <p>
+     * Drains event queues, anonymizes player data (if enabled), builds a JSON payload,
+     * and sends it asynchronously.
+     * </p>
+     * <p>
+     * <b>Bolt Optimization:</b> Anonymization (SHA-256 hashing) is performed here
+     * (off the main thread) to prevent lag spikes.
+     * </p>
      */
     public void flush() {
         boolean debugEnabled = plugin.getConfig().getBoolean("debug.enabled", false);
@@ -290,9 +327,13 @@ public class EventCollector {
     }
 
     /**
-     * Builds the HTTP request for the API
-     * @param json The JSON payload
-     * @return The built Request object or null if validation fails
+     * Builds the HTTP request for the API.
+     * <p>
+     * Validates configuration, enforces HTTPS, and sets the {@code X-API-Key} header.
+     * </p>
+     *
+     * @param json The JSON payload to send.
+     * @return The built {@link Request} object, or {@code null} if validation fails.
      */
     private Request buildRequest(String json) {
         String apiEndpoint = plugin.getConfig().getString("api.endpoint");
@@ -321,7 +362,9 @@ public class EventCollector {
     }
 
     /**
-     * Send JSON payload to API endpoint
+     * Send JSON payload to API endpoint asynchronously.
+     *
+     * @param json The JSON payload.
      */
     private void sendToAPI(String json) {
         Request request = buildRequest(json);
@@ -380,6 +423,15 @@ public class EventCollector {
         });
     }
 
+    /**
+     * Send JSON payload to API endpoint synchronously.
+     * <p>
+     * Used only for critical events (like SERVER_STOP) where we cannot rely on async execution.
+     * </p>
+     *
+     * @param json The JSON payload.
+     * @throws IOException If the network request fails.
+     */
     private void sendToAPISync(String json) throws IOException {
         Request request = buildRequest(json);
         if (request == null) return;
@@ -400,7 +452,15 @@ public class EventCollector {
     }
 
     /**
-     * Redact sensitive information (API key) from logs
+     * Redact sensitive information (API keys) from logs.
+     * <p>
+     * Scrubs both the specific API key used and any pattern resembling an API key
+     * to prevent leaks in stack traces or error messages.
+     * </p>
+     *
+     * @param text   The text to sanitize.
+     * @param apiKey The specific API key known to be in use (optional).
+     * @return The sanitized text with keys replaced by {@code [REDACTED]} or {@code pvt_***}.
      */
     private String redactSensitiveInfo(String text, String apiKey) {
         String redacted = text;
@@ -418,7 +478,13 @@ public class EventCollector {
     }
 
     /**
-     * Redact PII (UUIDs, names, hostnames) from JSON payload for logging
+     * Redact PII (UUIDs, names, hostnames) from JSON payload for debug logging.
+     * <p>
+     * Ensures user privacy when {@code debug.log-batches} is enabled.
+     * </p>
+     *
+     * @param json The raw JSON payload string.
+     * @return A string representation of the JSON with PII fields replaced by {@code [REDACTED]}.
      */
     private String redactPii(String json) {
         try {

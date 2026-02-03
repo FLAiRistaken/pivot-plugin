@@ -120,7 +120,17 @@ public class PivotPlugin extends JavaPlugin {
     }
 
     /**
-     * Validate configuration on startup
+     * Validate configuration on startup.
+     * <p>
+     * Checks for:
+     * <ul>
+     *   <li>Valid API key format (starts with 'pvt_', length >= 20, alphanumeric).</li>
+     *   <li>Valid API endpoint (HTTPS required).</li>
+     *   <li>Sane collection intervals (batch interval > TPS interval).</li>
+     * </ul>
+     * </p>
+     *
+     * @return {@code true} if configuration is valid, {@code false} otherwise.
      */
     public boolean validateConfig() {
         boolean valid = true;
@@ -185,7 +195,11 @@ public class PivotPlugin extends JavaPlugin {
     }
 
     /**
-     * Log configuration (with sensitive data masked)
+     * Log configuration to console with sensitive data masked.
+     * <p>
+     * API keys are partially masked (e.g., "pvt_***1234") or fully hidden
+     * to prevent leakage in server logs.
+     * </p>
      */
     private void logConfiguration() {
         String apiKey = getConfig().getString("api.key", "not set");
@@ -222,7 +236,12 @@ public class PivotPlugin extends JavaPlugin {
     }
 
     /**
-     * Check if config.yml is world-readable (security risk)
+     * Check if config.yml is world-readable (security risk).
+     * <p>
+     * If the file is readable or writable by Group/Others, this method attempts
+     * to lock permissions to {@code 600} (Owner Read/Write only) using POSIX APIs.
+     * Logs a warning if the file is insecure and cannot be fixed.
+     * </p>
      */
     public void checkConfigPermissions() {
         File configFile = new File(getDataFolder(), "config.yml");
@@ -264,7 +283,15 @@ public class PivotPlugin extends JavaPlugin {
     }
 
     /**
-     * Start performance monitoring and flush tasks with dynamic intervals
+     * Start performance monitoring and flush tasks with dynamic intervals.
+     * <p>
+     * Schedules asynchronous tasks for:
+     * <ul>
+     *   <li>TPS Sampling: Captures server performance metrics.</li>
+     *   <li>Event Flushing: Batches and sends collected events to the API.</li>
+     * </ul>
+     * Intervals are configured in {@code config.yml}.
+     * </p>
      */
     private void startTasks() {
         if (!getConfig().getBoolean("collection.enabled", true)) {
@@ -335,7 +362,10 @@ public class PivotPlugin extends JavaPlugin {
 
     /**
      * Restarts the collection tasks.
-     * Called when configuration is reloaded via /pivot reload.
+     * <p>
+     * Called when configuration is reloaded via {@code /pivot reload}.
+     * Cancels existing tasks and starts new ones with updated intervals.
+     * </p>
      */
     public void restartTasks() {
         // Reload event collector configuration
@@ -358,7 +388,9 @@ public class PivotPlugin extends JavaPlugin {
     }
 
     /**
-     * Get the event collector instance
+     * Get the event collector instance.
+     *
+     * @return The active {@link EventCollector}.
      */
     public EventCollector getEventCollector() {
         return eventCollector;
@@ -366,7 +398,8 @@ public class PivotPlugin extends JavaPlugin {
 
     /**
      * Get the timestamp of the last successful event batch flush.
-     * @return Timestamp in milliseconds
+     *
+     * @return Timestamp in milliseconds.
      */
     public long getLastEventSentTime() {
         return lastEventSentTime;
