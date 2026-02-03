@@ -175,8 +175,8 @@ public class EventCollector {
             return hexString.toString();
         } catch (NoSuchAlgorithmException e) {
             // SHA-256 should always be available
-            logger.warning("SHA-256 not available! Using plain UUID.");
-            return uuid;
+            logger.severe("SHA-256 not available! Anonymization failed.");
+            return null;
         }
     }
 
@@ -279,7 +279,14 @@ public class EventCollector {
             if (anonymize) {
                 if (polledEvent.has("player_uuid")) {
                     String rawUuid = polledEvent.get("player_uuid").getAsString();
-                    polledEvent.addProperty("player_uuid", hashUuid(rawUuid));
+                    String hashedUuid = hashUuid(rawUuid);
+
+                    // SECURITY: Fail secure - if hashing fails, do not send raw UUID
+                    if (hashedUuid != null) {
+                        polledEvent.addProperty("player_uuid", hashedUuid);
+                    } else {
+                        polledEvent.addProperty("player_uuid", "ANONYMIZATION_FAILED");
+                    }
                 }
                 if (polledEvent.has("player_name")) {
                     polledEvent.addProperty("player_name", "Player");
