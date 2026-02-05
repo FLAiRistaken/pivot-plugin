@@ -34,6 +34,10 @@ collection:
   # Recommended: 30 seconds
   tps-sample-interval: 30
 
+  # Reduce TPS sampling frequency when server is empty (0 players)
+  # Saves resources on idle servers
+  idle-throttling: true
+
 # Privacy Settings
 privacy:
   # Hash player UUIDs for anonymity (NOT RECOMMENDED)

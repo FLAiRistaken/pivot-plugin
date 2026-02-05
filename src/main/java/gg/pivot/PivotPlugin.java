@@ -351,7 +351,8 @@ public class PivotPlugin extends JavaPlugin {
                 int baseInterval = getConfig().getInt("collection.tps-sample-interval", 30);
                 long nextDelay = baseInterval * 20L;
 
-                if (playerCount == 0) {
+                boolean idleThrottling = getConfig().getBoolean("collection.idle-throttling", true);
+                if (idleThrottling && playerCount == 0) {
                      nextDelay *= 4; // Increase delay if idle
                 }
 
