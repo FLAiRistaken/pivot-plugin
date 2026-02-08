@@ -38,6 +38,7 @@ collection:
   track-player-events: true
   track-performance: true
   tps-sample-interval: 30     # Seconds between TPS samples
+  idle-throttling: true       # Reduce TPS sampling frequency when server is empty
 
 privacy:
   anonymize-players: false    # Hash UUIDs for privacy
