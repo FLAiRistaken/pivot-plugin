@@ -239,7 +239,8 @@ public class EventCollector {
             sendToAPISync(payload.toString());
         } catch (IOException e) {
             // SECURITY: Redact sensitive info (API key) from exception message
-            logger.warning("Failed to send SERVER_STOP event: " + redactSensitiveInfo(e.getMessage(), this.apiKey));
+            String errorMsg = e.getMessage() != null ? e.getMessage() : "Unknown error";
+            logger.warning("Failed to send SERVER_STOP event: " + redactSensitiveInfo(errorMsg, this.apiKey));
         }
     }
 
@@ -470,6 +471,7 @@ public class EventCollector {
      * @return The sanitized text with keys replaced by {@code [REDACTED]} or {@code pvt_***}.
      */
     private String redactSensitiveInfo(String text, String apiKey) {
+        if (text == null) return "null";
         String redacted = text;
 
         // Redact specific key if known
