@@ -65,7 +65,21 @@ public class PivotCommand implements CommandExecutor, TabCompleter {
     }
 
     /**
-     * Handle /pivot status
+     * Handle /pivot status.
+     * <p>
+     * Displays:
+     * <ul>
+     *   <li>Configuration validity (API Key, Endpoint).</li>
+     *   <li>Collection status (Enabled/Disabled, Queue sizes).</li>
+     *   <li>Last successful batch sent time.</li>
+     *   <li>Server Performance (TPS, Player Count).</li>
+     *   <li>Privacy and Debug settings.</li>
+     * </ul>
+     * API Keys are masked for security.
+     * </p>
+     *
+     * @param sender The command sender.
+     * @return Always true.
      */
     private boolean handleStatus(CommandSender sender) {
         sender.sendMessage(ChatColor.GOLD + "========== Pivot Analytics Status ==========");
@@ -77,10 +91,11 @@ public class PivotCommand implements CommandExecutor, TabCompleter {
         String displayKey;
         if (configured) {
             // SECURITY: Mask API key to prevent exposure while allowing verification
-            if (apiKey.length() > 8) {
+            // Only show partial key if it meets minimum length requirements (20 chars)
+            if (apiKey.length() >= 20) {
                 displayKey = apiKey.substring(0, 4) + "***" + apiKey.substring(apiKey.length() - 4);
             } else {
-                displayKey = "Configured (Hidden)";
+                displayKey = "Configured (Invalid/Hidden)";
             }
         } else {
             displayKey = ChatColor.RED + "NOT SET";
@@ -154,7 +169,14 @@ public class PivotCommand implements CommandExecutor, TabCompleter {
     }
 
     /**
-     * Handle /pivot reload
+     * Handle /pivot reload.
+     * <p>
+     * Reloads {@code config.yml}, validates the new configuration, and restarts
+     * collection tasks with new intervals.
+     * </p>
+     *
+     * @param sender The command sender.
+     * @return Always true.
      */
     private boolean handleReload(CommandSender sender) {
         sender.sendMessage(ChatColor.YELLOW + "Reloading Pivot Analytics configuration...");
@@ -169,6 +191,9 @@ public class PivotCommand implements CommandExecutor, TabCompleter {
                 sender.sendMessage(ChatColor.RED + "Please check console for details and fix config.yml.");
                 return true;
             }
+
+            // Security check for config file permissions
+            plugin.checkConfigPermissions();
 
             // Restart tasks with new intervals
             plugin.restartTasks();
@@ -194,7 +219,14 @@ public class PivotCommand implements CommandExecutor, TabCompleter {
     }
 
     /**
-     * Handle /pivot debug [on|off|toggle]
+     * Handle /pivot debug [on|off|toggle].
+     * <p>
+     * Toggles verbose logging in the console. Updates {@code config.yml} and saves the change.
+     * </p>
+     *
+     * @param sender The command sender.
+     * @param args   Command arguments (e.g., ["debug", "on"]).
+     * @return Always true.
      */
     private boolean handleDebug(CommandSender sender, String[] args) {
         boolean currentDebug = plugin.getConfig().getBoolean("debug.enabled", false);
@@ -248,7 +280,14 @@ public class PivotCommand implements CommandExecutor, TabCompleter {
     }
 
     /**
-     * Handle /pivot info
+     * Handle /pivot info.
+     * <p>
+     * Displays plugin version, technical details (Java/Server version, TPS method),
+     * and links to documentation/support.
+     * </p>
+     *
+     * @param sender The command sender.
+     * @return Always true.
      */
     private boolean handleInfo(CommandSender sender) {
         sender.sendMessage(ChatColor.GOLD + "========== Pivot Analytics Info ==========");
@@ -282,7 +321,9 @@ public class PivotCommand implements CommandExecutor, TabCompleter {
     }
 
     /**
-     * Show help message
+     * Show help message.
+     *
+     * @param sender The command sender.
      */
     private void sendHelp(CommandSender sender) {
         sender.sendMessage(ChatColor.GOLD + "========== Pivot Analytics Commands ==========");
@@ -300,7 +341,10 @@ public class PivotCommand implements CommandExecutor, TabCompleter {
     }
 
     /**
-     * Format seconds into human-readable time
+     * Format seconds into human-readable time string.
+     *
+     * @param seconds Time in seconds.
+     * @return Formatted string (e.g., "5 seconds ago", "2 minutes ago").
      */
     private String formatTimeAgo(long seconds) {
         if (seconds < 60) {
@@ -315,7 +359,16 @@ public class PivotCommand implements CommandExecutor, TabCompleter {
     }
 
     /**
-     * Tab completion for /pivot command
+     * Tab completion for /pivot command.
+     * <p>
+     * Provides suggestions for subcommands and arguments (e.g., debug options).
+     * </p>
+     *
+     * @param sender  The command sender.
+     * @param command The command being executed.
+     * @param alias   The alias used.
+     * @param args    The command arguments.
+     * @return List of completions.
      */
     @Override
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {

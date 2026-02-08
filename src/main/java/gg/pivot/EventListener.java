@@ -76,6 +76,9 @@ public class EventListener implements Listener {
      */
     @EventHandler
     public void onPlayerJoin(PlayerJoinEvent event) {
+        // ⚡ Bolt: Update cached player count (thread-safe)
+        plugin.updatePlayerCount(1);
+
         // Check if player event tracking is enabled
         if (!plugin.getConfig().getBoolean("collection.track-player-events", true)) {
             hostnameCache.remove(event.getPlayer().getUniqueId());
@@ -123,6 +126,9 @@ public class EventListener implements Listener {
      */
     @EventHandler
     public void onPlayerQuit(PlayerQuitEvent event) {
+        // ⚡ Bolt: Update cached player count (thread-safe)
+        plugin.updatePlayerCount(-1);
+
         UUID playerId = event.getPlayer().getUniqueId();
 
         // Clean up cache

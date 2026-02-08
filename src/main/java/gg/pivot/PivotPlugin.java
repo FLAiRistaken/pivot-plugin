@@ -10,7 +10,9 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermission;
+import java.util.HashSet;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Logger;
 
 /**
@@ -25,6 +27,9 @@ public class PivotPlugin extends JavaPlugin {
     private EventCollector eventCollector;
     private BukkitTask tpsTask;
     private BukkitTask flushTask;
+
+    // ⚡ Bolt Optimization: Cache player count to avoid main thread blocking
+    private final AtomicInteger onlinePlayerCount = new AtomicInteger(0);
 
     private long lastEventSentTime = 0;
 
@@ -59,6 +64,9 @@ public class PivotPlugin extends JavaPlugin {
         // Initialize TPS detection
         TPSUtil.initialize(this, logger);
         logger.info("TPS Detection: " + TPSUtil.getTPSInfo());
+
+        // Initialize player count
+        onlinePlayerCount.set(getServer().getOnlinePlayers().size());
 
         // Initialize event collector
         eventCollector = new EventCollector(this);
@@ -119,7 +127,17 @@ public class PivotPlugin extends JavaPlugin {
     }
 
     /**
-     * Validate configuration on startup
+     * Validate configuration on startup.
+     * <p>
+     * Checks for:
+     * <ul>
+     *   <li>Valid API key format (starts with 'pvt_', length >= 20, alphanumeric).</li>
+     *   <li>Valid API endpoint (HTTPS required).</li>
+     *   <li>Sane collection intervals (batch interval > TPS interval).</li>
+     * </ul>
+     * </p>
+     *
+     * @return {@code true} if configuration is valid, {@code false} otherwise.
      */
     public boolean validateConfig() {
         boolean valid = true;
@@ -184,7 +202,11 @@ public class PivotPlugin extends JavaPlugin {
     }
 
     /**
-     * Log configuration (with sensitive data masked)
+     * Log configuration to console with sensitive data masked.
+     * <p>
+     * API keys are partially masked (e.g., "pvt_***1234") or fully hidden
+     * to prevent leakage in server logs.
+     * </p>
      */
     private void logConfiguration() {
         String apiKey = getConfig().getString("api.key", "not set");
@@ -221,9 +243,14 @@ public class PivotPlugin extends JavaPlugin {
     }
 
     /**
-     * Check if config.yml is world-readable (security risk)
+     * Check if config.yml is world-readable (security risk).
+     * <p>
+     * If the file is readable or writable by Group/Others, this method attempts
+     * to lock permissions to {@code 600} (Owner Read/Write only) using POSIX APIs.
+     * Logs a warning if the file is insecure and cannot be fixed.
+     * </p>
      */
-    private void checkConfigPermissions() {
+    public void checkConfigPermissions() {
         File configFile = new File(getDataFolder(), "config.yml");
         if (configFile.exists()) {
             try {
@@ -242,7 +269,17 @@ public class PivotPlugin extends JavaPlugin {
                 }
 
                 if (insecure) {
-                    logger.warning("Please restrict file permissions (chmod 600) to protect your API key.");
+                    logger.warning("Config.yml is insecure! Attempting to lock permissions (chmod 600)...");
+                    try {
+                        Set<PosixFilePermission> securePerms = new HashSet<>();
+                        securePerms.add(PosixFilePermission.OWNER_READ);
+                        securePerms.add(PosixFilePermission.OWNER_WRITE);
+                        Files.setPosixFilePermissions(path, securePerms);
+                        logger.info("Success! Config.yml is now secure (600).");
+                    } catch (IOException e) {
+                        logger.severe("Failed to lock permissions: " + e.getMessage());
+                        logger.warning("Please manually run: chmod 600 " + configFile.getAbsolutePath());
+                    }
                 }
             } catch (UnsupportedOperationException e) {
                 // Not a POSIX system (e.g. Windows), skip check
@@ -253,7 +290,15 @@ public class PivotPlugin extends JavaPlugin {
     }
 
     /**
-     * Start performance monitoring and flush tasks with dynamic intervals
+     * Start performance monitoring and flush tasks with dynamic intervals.
+     * <p>
+     * Schedules asynchronous tasks for:
+     * <ul>
+     *   <li>TPS Sampling: Captures server performance metrics.</li>
+     *   <li>Event Flushing: Batches and sends collected events to the API.</li>
+     * </ul>
+     * Intervals are configured in {@code config.yml}.
+     * </p>
      */
     private void startTasks() {
         if (!getConfig().getBoolean("collection.enabled", true)) {
@@ -271,19 +316,7 @@ public class PivotPlugin extends JavaPlugin {
 
         // Start TPS monitoring task
         if (getConfig().getBoolean("collection.track-performance", true)) {
-            tpsTask = new BukkitRunnable() {
-                @Override
-                public void run() {
-                    int playerCount = getServer().getOnlinePlayers().size();
-                    double tps = TPSUtil.getTPS();
-                    eventCollector.addPerformanceEvent(tps, playerCount);
-
-                    if (getConfig().getBoolean("debug.enabled", false)) {
-                        logger.info(String.format("Sampled - Players: %d, TPS: %.2f", playerCount, tps));
-                    }
-                }
-            }.runTaskTimerAsynchronously(this, 0L, tpsIntervalTicks);
-
+            scheduleNextTpsSample(0L);
             logger.info("Started TPS monitoring (every " + tpsIntervalSeconds + "s)");
         }
 
@@ -300,8 +333,48 @@ public class PivotPlugin extends JavaPlugin {
     }
 
     /**
+     * Schedules the next TPS sample with dynamic interval based on player count.
+     * ⚡ Bolt Optimization: Reduces sampling frequency when server is empty.
+     */
+    private void scheduleNextTpsSample(long delayTicks) {
+        if (!isEnabled()) return;
+
+        tpsTask = new BukkitRunnable() {
+            @Override
+            public void run() {
+                if (!isEnabled()) return;
+
+                // Capture data
+                // ⚡ Bolt: Use cached player count (thread-safe, no main thread blocking)
+                int playerCount = getOnlinePlayerCount();
+                double tps = TPSUtil.getTPS();
+                eventCollector.addPerformanceEvent(tps, playerCount);
+
+                if (getConfig().getBoolean("debug.enabled", false)) {
+                    logger.info(String.format("Sampled - Players: %d, TPS: %.2f", playerCount, tps));
+                }
+
+                // Schedule next run
+                // ⚡ Bolt: Increase interval if 0 players to save resources
+                int baseInterval = getConfig().getInt("collection.tps-sample-interval", 30);
+                long nextDelay = baseInterval * 20L;
+
+                boolean idleThrottling = getConfig().getBoolean("collection.idle-throttling", true);
+                if (idleThrottling && playerCount == 0) {
+                     nextDelay *= 4; // Increase delay if idle
+                }
+
+                scheduleNextTpsSample(nextDelay);
+            }
+        }.runTaskLaterAsynchronously(PivotPlugin.this, delayTicks);
+    }
+
+    /**
      * Restarts the collection tasks.
-     * Called when configuration is reloaded via /pivot reload.
+     * <p>
+     * Called when configuration is reloaded via {@code /pivot reload}.
+     * Cancels existing tasks and starts new ones with updated intervals.
+     * </p>
      */
     public void restartTasks() {
         // Reload event collector configuration
@@ -324,7 +397,9 @@ public class PivotPlugin extends JavaPlugin {
     }
 
     /**
-     * Get the event collector instance
+     * Get the event collector instance.
+     *
+     * @return The active {@link EventCollector}.
      */
     public EventCollector getEventCollector() {
         return eventCollector;
@@ -332,9 +407,27 @@ public class PivotPlugin extends JavaPlugin {
 
     /**
      * Get the timestamp of the last successful event batch flush.
-     * @return Timestamp in milliseconds
+     *
+     * @return Timestamp in milliseconds.
      */
     public long getLastEventSentTime() {
         return lastEventSentTime;
+    }
+
+    /**
+     * Get the cached online player count.
+     * Thread-safe and non-blocking.
+     */
+    public int getOnlinePlayerCount() {
+        return onlinePlayerCount.get();
+    }
+
+    /**
+     * Update the cached player count.
+     *
+     * @param delta The change in player count (e.g., +1 or -1).
+     */
+    public void updatePlayerCount(int delta) {
+        onlinePlayerCount.addAndGet(delta);
     }
 }

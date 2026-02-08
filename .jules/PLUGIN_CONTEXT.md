@@ -82,6 +82,18 @@ public void addPlayerEvent(...) {
 - Verify intervals are sane (batch >= TPS sample)
 - **Privacy Warning:** Log a warning if anonymization is enabled (`privacy.anonymize-players: true`).
 
+### Sentinel API Key Security
+- **Strict Validation:** API keys must start with `pvt_`, be at least 20 characters long, and contain only alphanumeric/underscore characters.
+- **Secure Handling:** API keys are `volatile` in `EventCollector`, immediately trimmed of whitespace, and never logged in full.
+- **Permission Locking:** `config.yml` permissions are checked on startup. If insecure (readable/writable by Group/Others), the plugin attempts to lock them to `600` (Owner R/W).
+- **Masking:** API keys are masked in startup logs and `/pivot status`.
+  - Keys > 8 chars: Show first/last 4 chars (e.g., `pvt_***1234`).
+  - Keys <= 8 chars: Completely hidden ("Configured (Hidden)").
+- **Redaction:**
+  - `EventCollector.redactSensitiveInfo()` scrubs API keys and patterns resembling keys (`pvt_[a-zA-Z0-9_]{10,}`) from exception messages and logs.
+  - PII (UUIDs, names, hostnames) is redacted from debug logs using `redactPii()`.
+- **Race Condition Prevention:** Async callbacks retrieve the API key from the request header (`X-API-Key`) to ensure the key used for the request is the one used for redaction context, preventing leaks during reloads.
+
 ---
 
 ## Code Conventions

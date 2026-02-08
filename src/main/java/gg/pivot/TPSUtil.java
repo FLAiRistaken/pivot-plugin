@@ -44,7 +44,14 @@ public class TPSUtil {
     private static double calculatedTPS = 20.0;
 
     /**
-     * Initialize TPS detection - call once on plugin enable
+     * Initialize TPS detection - call once on plugin enable.
+     * <p>
+     * Detects available TPS methods (Paper, Spigot, or Manual) and initializes
+     * cached fields to optimize performance.
+     * </p>
+     *
+     * @param plugin The plugin instance.
+     * @param logger The plugin logger.
      */
     public static void initialize(Plugin plugin, Logger logger) {
         if (initialized) return;
@@ -103,7 +110,11 @@ public class TPSUtil {
     }
 
     /**
-     * Manual tick measurement (called every tick)
+     * Manual tick measurement (called every tick).
+     * <p>
+     * Records the duration of the last tick into a rolling buffer.
+     * Used only when native TPS methods are unavailable.
+     * </p>
      */
     private static void measureTick() {
         long currentTime = System.nanoTime();
@@ -128,8 +139,13 @@ public class TPSUtil {
     }
 
     /**
-     * Get current server TPS
-     * @return TPS (1-minute average) or calculated TPS
+     * Get current server TPS.
+     * <p>
+     * Returns the 1-minute average TPS from the most accurate source available.
+     * </p>
+     *
+     * @return TPS (capped at 20.0).
+     * @throws IllegalStateException If called before initialization.
      */
     public static double getTPS() {
         if (!initialized) {
@@ -176,7 +192,9 @@ public class TPSUtil {
     }
 
     /**
-     * Get detailed TPS info for debugging
+     * Get detailed TPS info for debugging.
+     *
+     * @return A string describing the active TPS detection method (e.g., "Paper (native API)").
      */
     public static String getTPSInfo() {
         if (isPaper) {
