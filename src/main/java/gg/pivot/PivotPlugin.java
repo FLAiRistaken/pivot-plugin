@@ -12,6 +12,7 @@ import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermission;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Logger;
 
 /**
@@ -26,6 +27,9 @@ public class PivotPlugin extends JavaPlugin {
     private EventCollector eventCollector;
     private BukkitTask tpsTask;
     private BukkitTask flushTask;
+
+    // ⚡ Bolt Optimization: Cache player count to avoid main thread blocking
+    private final AtomicInteger onlinePlayerCount = new AtomicInteger(0);
 
     private long lastEventSentTime = 0;
 
@@ -60,6 +64,9 @@ public class PivotPlugin extends JavaPlugin {
         // Initialize TPS detection
         TPSUtil.initialize(this, logger);
         logger.info("TPS Detection: " + TPSUtil.getTPSInfo());
+
+        // Initialize player count
+        onlinePlayerCount.set(getServer().getOnlinePlayers().size());
 
         // Initialize event collector
         eventCollector = new EventCollector(this);
@@ -338,7 +345,8 @@ public class PivotPlugin extends JavaPlugin {
                 if (!isEnabled()) return;
 
                 // Capture data
-                int playerCount = getServer().getOnlinePlayers().size();
+                // ⚡ Bolt: Use cached player count (thread-safe, no main thread blocking)
+                int playerCount = getOnlinePlayerCount();
                 double tps = TPSUtil.getTPS();
                 eventCollector.addPerformanceEvent(tps, playerCount);
 
@@ -404,5 +412,22 @@ public class PivotPlugin extends JavaPlugin {
      */
     public long getLastEventSentTime() {
         return lastEventSentTime;
+    }
+
+    /**
+     * Get the cached online player count.
+     * Thread-safe and non-blocking.
+     */
+    public int getOnlinePlayerCount() {
+        return onlinePlayerCount.get();
+    }
+
+    /**
+     * Update the cached player count.
+     *
+     * @param delta The change in player count (e.g., +1 or -1).
+     */
+    public void updatePlayerCount(int delta) {
+        onlinePlayerCount.addAndGet(delta);
     }
 }
