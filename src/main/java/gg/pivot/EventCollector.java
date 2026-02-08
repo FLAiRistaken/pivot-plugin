@@ -59,8 +59,8 @@ public class EventCollector {
 
         // SECURITY: Validate API key format (High Priority)
         // This ensures the collector doesn't run with an invalid key even if PivotPlugin validation was bypassed
-        if (this.apiKey == null || !this.apiKey.startsWith("pvt_") || this.apiKey.length() < 20) {
-            logger.warning("EventCollector initialized with invalid API key (must start with 'pvt_' and be >= 20 chars). Events will NOT be sent.");
+        if (this.apiKey == null || !this.apiKey.startsWith("pvt_") || this.apiKey.length() < 20 || !this.apiKey.matches("^[a-zA-Z0-9_]+$")) {
+            logger.warning("EventCollector initialized with invalid API key (must start with 'pvt_', be >= 20 chars, and alphanumeric). Events will NOT be sent.");
             this.apiKey = null; // Disable sending
         }
 
@@ -85,7 +85,7 @@ public class EventCollector {
         String trimmedKey = key != null ? key.trim() : null; // SECURITY: Trim whitespace
 
         // SECURITY: Validate API key format on reload
-        if (trimmedKey == null || !trimmedKey.startsWith("pvt_") || trimmedKey.length() < 20) {
+        if (trimmedKey == null || !trimmedKey.startsWith("pvt_") || trimmedKey.length() < 20 || !trimmedKey.matches("^[a-zA-Z0-9_]+$")) {
             logger.warning("EventCollector reload: Invalid API key. Keeping previous key (if valid) or disabling.");
             // We could keep old key, or disable. Disabling is safer to avoid confusion if config is broken.
             this.apiKey = null;

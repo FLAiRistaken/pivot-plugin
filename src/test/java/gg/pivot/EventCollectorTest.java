@@ -5,10 +5,12 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.logging.Logger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -55,5 +57,36 @@ public class EventCollectorTest {
         String safeMessage = "This is pvt_ltd company";
         String redacted3 = (String) redactMethod.invoke(collector, safeMessage, apiKey);
         assertEquals(safeMessage, redacted3, "Should NOT redact short pvt_ tokens");
+    }
+
+    @Test
+    public void testApiKeyValidation() throws Exception {
+        // Setup mocks
+        when(plugin.getLogger()).thenReturn(Logger.getGlobal());
+        when(plugin.getConfig()).thenReturn(config);
+
+        // Helper to check apiKey field via reflection
+        Field apiKeyField = EventCollector.class.getDeclaredField("apiKey");
+        apiKeyField.setAccessible(true);
+
+        // Test 1: Valid Key
+        when(config.getString("api.key")).thenReturn("pvt_validkey1234567890");
+        EventCollector collector = new EventCollector(plugin);
+        assertEquals("pvt_validkey1234567890", apiKeyField.get(collector), "Valid key should be accepted");
+
+        // Test 2: Invalid Characters (Security Enhancement)
+        when(config.getString("api.key")).thenReturn("pvt_invalidkey!@#$$%^");
+        EventCollector collector2 = new EventCollector(plugin);
+        assertNull(apiKeyField.get(collector2), "Key with invalid chars should be rejected (null)");
+
+        // Test 3: Too Short
+        when(config.getString("api.key")).thenReturn("pvt_short");
+        EventCollector collector3 = new EventCollector(plugin);
+        assertNull(apiKeyField.get(collector3), "Short key should be rejected (null)");
+
+        // Test 4: Wrong Prefix
+        when(config.getString("api.key")).thenReturn("abc_validlenghtbutwrongprefix");
+        EventCollector collector4 = new EventCollector(plugin);
+        assertNull(apiKeyField.get(collector4), "Key with wrong prefix should be rejected (null)");
     }
 }
