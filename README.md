@@ -6,6 +6,7 @@ Real-time analytics and performance monitoring for Minecraft servers. Pivot help
 
 - **Player Analytics:** Track joins, quits, sessions, and retention cohorts.
 - **Performance Monitoring:** Real-time TPS tracking and player count correlation.
+- **Server Lifecycle Events:** Track server starts, stops, and uptime.
 - **Privacy Focused:** Optional UUID hashing and hostname tracking controls.
 - **Cross-Version:** Supports Spigot/Paper 1.8.8 through 1.21+.
 - **Lightweight:** Async data processing with minimal impact on server performance (<0.1ms tick impact).
@@ -38,6 +39,7 @@ collection:
   track-player-events: true
   track-performance: true
   tps-sample-interval: 30     # Seconds between TPS samples
+  idle-throttling: true       # Reduce sampling when 0 players online
 
 privacy:
   anonymize-players: false    # Hash UUIDs for privacy
