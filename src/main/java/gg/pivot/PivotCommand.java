@@ -79,7 +79,7 @@ public class PivotCommand implements CommandExecutor, TabCompleter {
      * </p>
      *
      * @param sender The command sender.
-     * @return Always true.
+     * @return {@code true} indicating the command was handled successfully.
      */
     private boolean handleStatus(CommandSender sender) {
         sender.sendMessage(ChatColor.GOLD + "========== Pivot Analytics Status ==========");

@@ -260,7 +260,7 @@ collection:
   track-player-events: true
   track-performance: true
   tps-sample-interval: 30     # Seconds between TPS samples
-  idle-throttling: true       # Reduce TPS sampling frequency when server is empty
+  idle-throttling: true       # Reduce sampling when 0 players online
 
 privacy:
   anonymize-players: false    # Hash UUIDs with SHA-256
@@ -304,6 +304,9 @@ boolean debugEnabled = plugin.getConfig().getBoolean("debug.enabled", false);
 1. **Paper API** (`Server.getTPS()`) - Native, most accurate
 2. **Spigot Reflection** (`MinecraftServer.recentTps`) - NMS access
 3. **Manual Calculation** (measure tick duration) - Universal fallback
+
+**Idle Throttling:**
+To conserve resources, the plugin supports `idle-throttling` (default: true). When 0 players are online, the TPS sampling interval is automatically multiplied by 4 (reduced frequency).
 
 Supports 1.7.10+ including modded servers.
 
