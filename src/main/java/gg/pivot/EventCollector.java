@@ -39,7 +39,7 @@ public class EventCollector {
     private volatile String apiKey;
 
     // ⚡ Bolt Optimization: Use ConcurrentLinkedQueue to avoid blocking main thread with locks
-    private final Queue<JsonObject> playerEvents = new ConcurrentLinkedQueue<>();
+    private final Queue<PlayerEventData> playerEvents = new ConcurrentLinkedQueue<>();
     private final Queue<JsonObject> performanceEvents = new ConcurrentLinkedQueue<>();
     private final Queue<JsonObject> serverEvents = new ConcurrentLinkedQueue<>();
 
@@ -124,32 +124,12 @@ public class EventCollector {
      * @param connectionType The type of connection ("initial" or "reconnect").
      */
     public void addPlayerEvent(String eventType, String playerUuid, String playerName, String hostname, String quitReason, Boolean sessionClean, String connectionType) {
-        JsonObject event = new JsonObject();
-        event.addProperty("timestamp", System.currentTimeMillis());
-        event.addProperty("event_type", eventType);
-
-        // ⚡ Bolt Optimization: Store raw data here, anonymize in async flush()
-        // This prevents SHA-256 hashing from blocking the main thread
-        event.addProperty("player_uuid", playerUuid);
-        event.addProperty("player_name", playerName);
-
         // Only add hostname if tracking enabled and not null
         boolean trackHostnames = plugin.getConfig().getBoolean("privacy.track-hostnames", true);
-        if (trackHostnames && hostname != null && !hostname.isEmpty()) {
-            event.addProperty("hostname", hostname);
-        }
+        String finalHostname = (trackHostnames && hostname != null && !hostname.isEmpty()) ? hostname : null;
 
-        if (quitReason != null) {
-            event.addProperty("quit_reason", quitReason);
-        }
-        if (sessionClean != null) {
-            event.addProperty("session_clean", sessionClean);
-        }
-        if (connectionType != null) {
-            event.addProperty("connection_type", connectionType);
-        }
-
-        playerEvents.add(event);
+        // ⚡ Bolt Optimization: Use POJO to avoid JsonObject creation on main thread
+        playerEvents.add(new PlayerEventData(eventType, playerUuid, playerName, finalHostname, quitReason, sessionClean, connectionType));
     }
 
     /**
@@ -275,35 +255,41 @@ public class EventCollector {
         boolean anonymize = plugin.getConfig().getBoolean("privacy.anonymize-players", false);
 
         JsonArray playerArray = new JsonArray();
-        JsonObject polledEvent;
+        PlayerEventData polledEvent;
         while ((polledEvent = playerEvents.poll()) != null) {
-            if (anonymize) {
-                if (polledEvent.has("player_uuid")) {
-                    String rawUuid = polledEvent.get("player_uuid").getAsString();
-                    String hashedUuid = hashUuid(rawUuid);
+            JsonObject event = new JsonObject();
+            event.addProperty("timestamp", polledEvent.timestamp);
+            event.addProperty("event_type", polledEvent.eventType);
 
-                    // SECURITY: Fail secure - if hashing fails, do not send raw UUID
-                    if (hashedUuid != null) {
-                        polledEvent.addProperty("player_uuid", hashedUuid);
-                    } else {
-                        polledEvent.addProperty("player_uuid", "ANONYMIZATION_FAILED");
-                    }
-                }
-                if (polledEvent.has("player_name")) {
-                    polledEvent.addProperty("player_name", "Player");
-                }
+            // Anonymization logic
+            if (anonymize) {
+                String hashedUuid = hashUuid(polledEvent.playerUuid);
+                // SECURITY: Fail secure - if hashing fails, do not send raw UUID
+                event.addProperty("player_uuid", hashedUuid != null ? hashedUuid : "ANONYMIZATION_FAILED");
+                event.addProperty("player_name", "Player");
+            } else {
+                event.addProperty("player_uuid", polledEvent.playerUuid);
+                event.addProperty("player_name", polledEvent.playerName);
             }
-            playerArray.add(polledEvent);
+
+            if (polledEvent.hostname != null) event.addProperty("hostname", polledEvent.hostname);
+            if (polledEvent.quitReason != null) event.addProperty("quit_reason", polledEvent.quitReason);
+            if (polledEvent.sessionClean != null) event.addProperty("session_clean", polledEvent.sessionClean);
+            if (polledEvent.connectionType != null) event.addProperty("connection_type", polledEvent.connectionType);
+
+            playerArray.add(event);
         }
 
         JsonArray perfArray = new JsonArray();
-        while ((polledEvent = performanceEvents.poll()) != null) {
-            perfArray.add(polledEvent);
+        JsonObject perfEvent;
+        while ((perfEvent = performanceEvents.poll()) != null) {
+            perfArray.add(perfEvent);
         }
 
         JsonArray serverArray = new JsonArray();
-        while ((polledEvent = serverEvents.poll()) != null) {
-            serverArray.add(polledEvent);
+        JsonObject serverEvent;
+        while ((serverEvent = serverEvents.poll()) != null) {
+            serverArray.add(serverEvent);
         }
 
         if (debugEnabled) {
@@ -516,6 +502,32 @@ public class EventCollector {
         } catch (Exception e) {
             // Fallback if parsing fails
             return "[Unable to redact PII - Payload Hidden]";
+        }
+    }
+
+    /**
+     * Simple POJO to hold player event data until flush.
+     * Avoids main-thread overhead of creating JsonObjects.
+     */
+    private static class PlayerEventData {
+        final long timestamp;
+        final String eventType;
+        final String playerUuid;
+        final String playerName;
+        final String hostname;
+        final String quitReason;
+        final Boolean sessionClean;
+        final String connectionType;
+
+        PlayerEventData(String eventType, String playerUuid, String playerName, String hostname, String quitReason, Boolean sessionClean, String connectionType) {
+            this.timestamp = System.currentTimeMillis();
+            this.eventType = eventType;
+            this.playerUuid = playerUuid;
+            this.playerName = playerName;
+            this.hostname = hostname;
+            this.quitReason = quitReason;
+            this.sessionClean = sessionClean;
+            this.connectionType = connectionType;
         }
     }
 }

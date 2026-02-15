@@ -44,6 +44,11 @@ public class EventListener implements Listener {
 
     /**
      * Captures the hostname used by the player to connect.
+     * <p>
+     * Uses {@code EventPriority.MONITOR} and {@code ignoreCancelled = true} to ensure
+     * we only capture data from successful logins and avoid conflicts with other plugins
+     * (especially on Paper servers which warn about non-MONITOR listeners on this event).
+     * </p>
      *
      * @param event The PlayerLoginEvent
      */
@@ -111,6 +116,8 @@ public class EventListener implements Listener {
 
     /**
      * Capture kick reason to enrich the subsequent quit event.
+     *
+     * @param event The PlayerKickEvent
      */
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onPlayerKick(PlayerKickEvent event) {
