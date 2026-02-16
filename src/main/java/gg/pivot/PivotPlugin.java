@@ -35,7 +35,8 @@ public class PivotPlugin extends JavaPlugin {
 
     /**
      * Plugin startup logic.
-     * Initializes configuration, TPS detection, event collector, and background tasks.
+     * Initializes configuration, TPS detection, event collector, and background
+     * tasks.
      */
     @Override
     public void onEnable() {
@@ -131,9 +132,10 @@ public class PivotPlugin extends JavaPlugin {
      * <p>
      * Checks for:
      * <ul>
-     *   <li>Valid API key format (starts with 'pvt_', length >= 20, alphanumeric).</li>
-     *   <li>Valid API endpoint (HTTPS required).</li>
-     *   <li>Sane collection intervals (batch interval > TPS interval).</li>
+     * <li>Valid API key format (starts with 'pvt_', length >= 20,
+     * alphanumeric).</li>
+     * <li>Valid API endpoint (HTTPS required).</li>
+     * <li>Sane collection intervals (batch interval > TPS interval).</li>
      * </ul>
      * </p>
      *
@@ -150,20 +152,9 @@ public class PivotPlugin extends JavaPlugin {
             apiKey = "";
         }
 
-        if (apiKey.isEmpty() || apiKey.equals("paste_your_key_here")) {
-            logger.severe("API key not configured! Get your key from https://app.pivotmc.dev");
-            valid = false;
-        } else if (!apiKey.startsWith("pvt_")) {
-            // SECURITY: Enforce API key format to prevent misconfiguration
-            logger.severe("API key is invalid! It must start with 'pvt_'");
-            valid = false;
-        } else if (apiKey.length() < 20) {
-            // SECURITY: Enforce minimum length for API key to prevent weak keys
-            logger.severe("API key is too short! It must be at least 20 characters.");
-            valid = false;
-        } else if (!apiKey.matches("^[a-zA-Z0-9_]+$")) {
-            // SECURITY: Enforce allowed characters
-            logger.severe("API key contains invalid characters! Only alphanumeric and underscores allowed.");
+        if (!isValidApiKeyFormat(apiKey)) {
+            logger.severe(
+                    "API key is invalid! It must start with 'pvt_', be at least 20 chars, and contain only alphanumeric characters, underscores, or hyphens.");
             valid = false;
         }
 
@@ -210,7 +201,8 @@ public class PivotPlugin extends JavaPlugin {
      */
     private void logConfiguration() {
         String apiKey = getConfig().getString("api.key", "not set");
-        if (apiKey != null) apiKey = apiKey.trim(); // Trim whitespace
+        if (apiKey != null)
+            apiKey = apiKey.trim(); // Trim whitespace
 
         String maskedKey;
         if (apiKey == null || apiKey.equals("not set") || apiKey.equals("paste_your_key_here")) {
@@ -258,12 +250,14 @@ public class PivotPlugin extends JavaPlugin {
                 Set<PosixFilePermission> permissions = Files.getPosixFilePermissions(path);
                 boolean insecure = false;
 
-                if (permissions.contains(PosixFilePermission.OTHERS_READ) || permissions.contains(PosixFilePermission.GROUP_READ)) {
+                if (permissions.contains(PosixFilePermission.OTHERS_READ)
+                        || permissions.contains(PosixFilePermission.GROUP_READ)) {
                     logger.warning("SECURITY WARNING: config.yml is readable by other users (Group/Others)!");
                     insecure = true;
                 }
 
-                if (permissions.contains(PosixFilePermission.OTHERS_WRITE) || permissions.contains(PosixFilePermission.GROUP_WRITE)) {
+                if (permissions.contains(PosixFilePermission.OTHERS_WRITE)
+                        || permissions.contains(PosixFilePermission.GROUP_WRITE)) {
                     logger.warning("SECURITY WARNING: config.yml is writable by other users (Group/Others)!");
                     insecure = true;
                 }
@@ -294,8 +288,8 @@ public class PivotPlugin extends JavaPlugin {
      * <p>
      * Schedules asynchronous tasks for:
      * <ul>
-     *   <li>TPS Sampling: Captures server performance metrics.</li>
-     *   <li>Event Flushing: Batches and sends collected events to the API.</li>
+     * <li>TPS Sampling: Captures server performance metrics.</li>
+     * <li>Event Flushing: Batches and sends collected events to the API.</li>
      * </ul>
      * Intervals are configured in {@code config.yml}.
      * </p>
@@ -337,12 +331,14 @@ public class PivotPlugin extends JavaPlugin {
      * ⚡ Bolt Optimization: Reduces sampling frequency when server is empty.
      */
     private void scheduleNextTpsSample(long delayTicks) {
-        if (!isEnabled()) return;
+        if (!isEnabled())
+            return;
 
         tpsTask = new BukkitRunnable() {
             @Override
             public void run() {
-                if (!isEnabled()) return;
+                if (!isEnabled())
+                    return;
 
                 // Capture data
                 // ⚡ Bolt: Use cached player count (thread-safe, no main thread blocking)
@@ -361,7 +357,7 @@ public class PivotPlugin extends JavaPlugin {
 
                 boolean idleThrottling = getConfig().getBoolean("collection.idle-throttling", true);
                 if (idleThrottling && playerCount == 0) {
-                     nextDelay *= 4; // Increase delay if idle
+                    nextDelay *= 4; // Increase delay if idle
                 }
 
                 scheduleNextTpsSample(nextDelay);
@@ -429,5 +425,35 @@ public class PivotPlugin extends JavaPlugin {
      */
     public void updatePlayerCount(int delta) {
         onlinePlayerCount.addAndGet(delta);
+    }
+
+    /**
+     * Validate API key format.
+     * <p>
+     * Rules:
+     * <ul>
+     * <li>Must not be null or empty</li>
+     * <li>Must not be the default placeholder</li>
+     * <li>Must start with "pvt_"</li>
+     * <li>Must be at least 20 characters long</li>
+     * <li>Must contain only alphanumeric characters, underscores, or hyphens</li>
+     * </ul>
+     * </p>
+     *
+     * @param apiKey The API key string to validate.
+     * @return {@code true} if valid, {@code false} otherwise.
+     */
+    public static boolean isValidApiKeyFormat(String apiKey) {
+        if (apiKey == null || apiKey.isEmpty() || apiKey.equals("paste_your_key_here")) {
+            return false;
+        }
+        if (!apiKey.startsWith("pvt_")) {
+            return false;
+        }
+        if (apiKey.length() < 20) {
+            return false;
+        }
+        // Allow alphanumeric, underscores, AND hyphens
+        return apiKey.matches("^[a-zA-Z0-9_-]+$");
     }
 }
