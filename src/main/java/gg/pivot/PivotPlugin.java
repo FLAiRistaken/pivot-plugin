@@ -145,12 +145,8 @@ public class PivotPlugin extends JavaPlugin {
         boolean valid = true;
 
         // Check API key
-        String apiKey = getConfig().getString("api.key", "");
-        if (apiKey != null) {
-            apiKey = apiKey.trim(); // TRIM WHITESPACE
-        } else {
-            apiKey = "";
-        }
+        String apiKey = getApiKey();
+        if (apiKey == null) apiKey = "";
 
         if (!isValidApiKeyFormat(apiKey)) {
             logger.severe(
@@ -159,7 +155,9 @@ public class PivotPlugin extends JavaPlugin {
         }
 
         // Check API endpoint
-        String endpoint = getConfig().getString("api.endpoint", "");
+        String endpoint = getApiEndpoint();
+        if (endpoint == null) endpoint = "";
+
         if (endpoint.isEmpty()) {
             logger.severe("API endpoint not configured!");
             valid = false;
@@ -200,12 +198,10 @@ public class PivotPlugin extends JavaPlugin {
      * </p>
      */
     private void logConfiguration() {
-        String apiKey = getConfig().getString("api.key", "not set");
-        if (apiKey != null)
-            apiKey = apiKey.trim(); // Trim whitespace
+        String apiKey = getApiKey();
 
         String maskedKey;
-        if (apiKey == null || apiKey.equals("not set") || apiKey.equals("paste_your_key_here")) {
+        if (apiKey == null || apiKey.isEmpty() || apiKey.equals("paste_your_key_here")) {
             maskedKey = "NOT CONFIGURED";
         } else {
             // SECURITY: Mask API key to prevent exposure while allowing verification
@@ -216,8 +212,10 @@ public class PivotPlugin extends JavaPlugin {
             }
         }
 
+        String endpoint = getApiEndpoint();
+
         logger.info("Configuration:");
-        logger.info("  API Endpoint: " + getConfig().getString("api.endpoint"));
+        logger.info("  API Endpoint: " + (endpoint != null ? endpoint : "NOT CONFIGURED"));
         logger.info("  API Key: " + maskedKey);
         logger.info("  Collection Enabled: " + getConfig().getBoolean("collection.enabled", true));
         logger.info("  Batch Interval: " + getConfig().getInt("collection.batch-interval", 60) + "s");
@@ -455,5 +453,29 @@ public class PivotPlugin extends JavaPlugin {
         }
         // Allow alphanumeric, underscores, AND hyphens
         return apiKey.matches("^[a-zA-Z0-9_-]+$");
+    }
+
+    /**
+     * Retrieves the API key, checking both nested (api.key) and flat (api-key) configurations.
+     * @return The trimmed API key, or null if not set.
+     */
+    public String getApiKey() {
+        String key = getConfig().getString("api.key");
+        if (key == null || key.isEmpty()) {
+            key = getConfig().getString("api-key");
+        }
+        return key != null ? key.trim() : null;
+    }
+
+    /**
+     * Retrieves the API endpoint, checking both nested (api.endpoint) and flat (api-endpoint) configurations.
+     * @return The trimmed API endpoint, or null if not set.
+     */
+    public String getApiEndpoint() {
+        String endpoint = getConfig().getString("api.endpoint");
+        if (endpoint == null || endpoint.isEmpty()) {
+            endpoint = getConfig().getString("api-endpoint");
+        }
+        return endpoint != null ? endpoint.trim() : null;
     }
 }
