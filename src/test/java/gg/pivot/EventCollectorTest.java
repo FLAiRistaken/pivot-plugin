@@ -27,6 +27,7 @@ public class EventCollectorTest {
     public void testRedactSensitiveInfo() throws Exception {
         // Setup mocks for EventCollector constructor
         when(plugin.getConfig()).thenReturn(config);
+        when(plugin.getApiKey()).thenCallRealMethod();
         when(config.getString("api.key")).thenReturn("pvt_validkey1234567890");
         when(plugin.getLogger()).thenReturn(Logger.getGlobal());
 
@@ -64,6 +65,7 @@ public class EventCollectorTest {
         // Setup mocks
         when(plugin.getLogger()).thenReturn(Logger.getGlobal());
         when(plugin.getConfig()).thenReturn(config);
+        when(plugin.getApiKey()).thenCallRealMethod();
 
         // Helper to check apiKey field via reflection
         Field apiKeyField = EventCollector.class.getDeclaredField("apiKey");
