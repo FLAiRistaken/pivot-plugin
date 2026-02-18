@@ -54,13 +54,12 @@ public class EventCollector {
         this.plugin = plugin;
         this.logger = plugin.getLogger();
 
-        String key = plugin.getConfig().getString("api.key");
-        this.apiKey = key != null ? key.trim() : null; // SECURITY: Trim whitespace to prevent leakage
+        this.apiKey = plugin.getApiKey();
 
         // SECURITY: Validate API key format (High Priority)
         // This ensures the collector doesn't run with an invalid key even if PivotPlugin validation was bypassed
-        if (this.apiKey == null || !this.apiKey.startsWith("pvt_") || this.apiKey.length() < 20 || !this.apiKey.matches("^[a-zA-Z0-9_]+$")) {
-            logger.warning("EventCollector initialized with invalid API key (must start with 'pvt_', be >= 20 chars, and alphanumeric). Events will NOT be sent.");
+        if (!PivotPlugin.isValidApiKeyFormat(this.apiKey)) {
+            logger.warning("EventCollector initialized with invalid API key (must start with 'pvt_', be >= 20 chars, and alphanumeric/hyphens). Events will NOT be sent.");
             this.apiKey = null; // Disable sending
         }
 
@@ -81,11 +80,10 @@ public class EventCollector {
      * </p>
      */
     public void reload() {
-        String key = plugin.getConfig().getString("api.key");
-        String trimmedKey = key != null ? key.trim() : null; // SECURITY: Trim whitespace
+        String trimmedKey = plugin.getApiKey();
 
         // SECURITY: Validate API key format on reload
-        if (trimmedKey == null || !trimmedKey.startsWith("pvt_") || trimmedKey.length() < 20 || !trimmedKey.matches("^[a-zA-Z0-9_]+$")) {
+        if (!PivotPlugin.isValidApiKeyFormat(trimmedKey)) {
             logger.warning("EventCollector reload: Invalid API key. Keeping previous key (if valid) or disabling.");
             // We could keep old key, or disable. Disabling is safer to avoid confusion if config is broken.
             this.apiKey = null;
@@ -330,7 +328,7 @@ public class EventCollector {
      * @return The built {@link Request} object, or {@code null} if validation fails.
      */
     private Request buildRequest(String json) {
-        String apiEndpoint = plugin.getConfig().getString("api.endpoint");
+        String apiEndpoint = plugin.getApiEndpoint();
 
         if (apiEndpoint == null || apiKey == null) {
             logger.warning("API endpoint or key not configured. Skipping event send.");
