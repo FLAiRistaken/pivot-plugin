@@ -116,6 +116,11 @@ public class PivotPlugin extends JavaPlugin {
      */
     @Override
     public void onDisable() {
+        // Shutdown TickProfiler first to restore the original scheduler (Spigot mode)
+        if (tickProfiler != null) {
+            tickProfiler.shutdown();
+        }
+
         // Send SERVER_STOP event synchronously
         if (eventCollector != null) {
             eventCollector.sendServerStopEvent("manual");
@@ -385,6 +390,15 @@ public class PivotPlugin extends JavaPlugin {
         // Reload event collector configuration
         if (eventCollector != null) {
             eventCollector.reload();
+        }
+
+        // Shutdown and reinitialise TickProfiler to apply updated config and restore scheduler
+        if (tickProfiler != null) {
+            tickProfiler.shutdown();
+        }
+        tickProfiler = new TickProfiler(this, configManager);
+        if (eventCollector != null) {
+            eventCollector.setTickProfiler(tickProfiler);
         }
 
         // Cancel existing tasks

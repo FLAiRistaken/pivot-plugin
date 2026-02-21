@@ -29,7 +29,7 @@ public class TickProfiler {
     private final Logger logger;
 
     private boolean isPaper;
-    private boolean profilingEnabled;
+    private volatile boolean profilingEnabled;
     private String mode;
     private boolean autoDisabled = false;
 
@@ -48,6 +48,12 @@ public class TickProfiler {
     // Overhead tracking
     private final AtomicLong overheadNano = new AtomicLong(0);
     private int overheadViolations = 0;
+
+    // Tracks the actual elapsed time between collectSample() calls
+    private long lastSampleTimestampMs = System.currentTimeMillis();
+
+    // Saved scheduler field reference for restoring the original scheduler on shutdown
+    private volatile Field savedSchedulerField;
 
     public TickProfiler(PivotPlugin plugin, ConfigManager configManager) {
         this.plugin = plugin;
@@ -93,11 +99,16 @@ public class TickProfiler {
         if (paperDetected && !configuredMode.equals("custom_only")) {
             this.mode = "paper_timings";
             this.isPaper = true;
+            if (!setupSpigotProxy()) {
+                logger.warning("TickProfiler: Spigot proxy setup failed; Paper mode will not have Spigot fallback.");
+            }
+            this.profilingEnabled = true;
             logger.info("TickProfiler initialised in paper_timings mode");
         } else {
             this.mode = "custom_spigot";
             this.isPaper = false;
             if (setupSpigotProxy()) {
+                this.profilingEnabled = true;
                 logger.info("TickProfiler initialised in custom_spigot mode");
             } else {
                 this.profilingEnabled = false;
@@ -125,6 +136,7 @@ public class TickProfiler {
 
             schedulerField.setAccessible(true);
             this.originalScheduler = schedulerField.get(server);
+            this.savedSchedulerField = schedulerField; // Store for shutdown()
 
             this.proxyScheduler = (BukkitScheduler) Proxy.newProxyInstance(
                 BukkitScheduler.class.getClassLoader(),
@@ -145,14 +157,17 @@ public class TickProfiler {
     public JsonObject collectSample() {
         if (!profilingEnabled || autoDisabled) return null;
 
-        int durationSeconds = configManager.getSamplingDurationSeconds();
+        long now = System.currentTimeMillis();
+        long elapsedMs = now - lastSampleTimestampMs;
+        lastSampleTimestampMs = now;
+        // Cast is safe: sampling intervals are expected to be seconds to minutes,
+        // well within int range.
+        int durationSeconds = (int) Math.max(1, elapsedMs / 1000);
 
-        // Check overhead
+        // Check overhead using actual elapsed time
         long overhead = overheadNano.getAndSet(0);
         double maxOverheadMs = configManager.getMaxOverheadMs();
-        // Limit logic: per tick average
-        // Total ticks in window approx 20 * duration
-        long totalTicks = 20L * durationSeconds;
+        long totalTicks = Math.max(1L, 20L * durationSeconds);
         double avgOverheadPerTickMs = (overhead / (double)totalTicks) / 1_000_000.0;
 
         if (avgOverheadPerTickMs > maxOverheadMs) {
@@ -276,6 +291,12 @@ public class TickProfiler {
         } catch (Exception e) {
             // ignore
         }
+
+        // If no Paper-specific samples could be collected, fall back to the
+        // existing Spigot/custom sampling so we still emit profiling data.
+        if (pluginsArray.size() == 0) {
+            collectSpigotSamples(pluginsArray, durationSeconds);
+        }
     }
 
     private Field getField(Class<?> clazz, String name) {
@@ -333,9 +354,11 @@ public class TickProfiler {
         public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
             long startOverhead = System.nanoTime();
             try {
-                // Intercept runTask*, schedule* methods
+                // Intercept runTask*, schedule*, and callSyncMethod methods
                 String name = method.getName();
-                if ((name.startsWith("runTask") || name.startsWith("schedule")) && args != null && args.length > 0) {
+                // Declared outside the if block so it remains accessible for BukkitTask ID tracking below.
+                String trackedPluginName = null;
+                if ((name.startsWith("runTask") || name.startsWith("schedule") || name.equals("callSyncMethod")) && args != null && args.length > 0) {
                     // Check args for Plugin and Runnable/Callable
                     Plugin pluginArg = null;
                     Runnable runnableArg = null;
@@ -356,7 +379,8 @@ public class TickProfiler {
                     }
 
                     if (pluginArg != null) {
-                        final String pluginName = pluginArg.getName();
+                        trackedPluginName = pluginArg.getName();
+                        final String pluginName = trackedPluginName;
 
                         if (runnableArg != null && runnableIndex >= 0) {
                             // Wrap Runnable
@@ -371,19 +395,10 @@ public class TickProfiler {
                 // Delegate
                 Object result = method.invoke(delegate, args);
 
-                // If it returned a BukkitTask or BukkitWorker, we might want to track ID?
-                // For now, capturing executed tasks via Wrapper is enough.
-                // The prompt says "task_count = distinct scheduled task IDs".
-                // If we wrapped the runnable, we can capture the ID when it runs?
-                // No, when it runs, we don't know the ID easily.
-                // But we can capture it from the return value here!
-                if (result instanceof BukkitTask) {
-                    // But we don't know WHICH plugin unless we captured pluginName above.
-                    // And we need to associate it.
-                    // Simpler: Just track 'executions' as sample_count.
-                    // 'task_count' can be approximated by number of unique Runnable instances?
-                    // Or we just track task IDs if we can.
-                    // Let's stick to sample_count (executions).
+                // Track distinct scheduled task IDs per plugin
+                if (result instanceof BukkitTask && trackedPluginName != null) {
+                    BukkitTask task = (BukkitTask) result;
+                    currentSpigotSamples.computeIfAbsent(trackedPluginName, k -> new PluginSample()).taskIds.add(task.getTaskId());
                 }
 
                 return result;
@@ -448,19 +463,34 @@ public class TickProfiler {
         }
     }
 
+    /**
+     * Shuts down the profiler, restoring the original BukkitScheduler if a proxy
+     * was installed. Must be called from {@code onDisable()} and any config reload
+     * path to avoid leaving a stale proxy after the plugin is disabled.
+     */
+    public void shutdown() {
+        profilingEnabled = false;
+        if (originalScheduler != null && savedSchedulerField != null) {
+            try {
+                Server server = Bukkit.getServer();
+                savedSchedulerField.set(server, originalScheduler);
+                logger.info("TickProfiler: Restored original scheduler");
+            } catch (Exception e) {
+                logger.severe("TickProfiler: Failed to restore original scheduler: " + e.getMessage());
+            }
+        }
+    }
+
     private static class PluginSample {
         long totalTimeNano = 0;
         long maxTimeNano = 0;
         long sampleCount = 0;
-        Set<Integer> taskIds = new CopyOnWriteArraySet<>(); // Placeholder for now
+        Set<Integer> taskIds = new CopyOnWriteArraySet<>();
 
         synchronized void add(long duration) {
             totalTimeNano += duration;
             if (duration > maxTimeNano) maxTimeNano = duration;
             sampleCount++;
-            // taskIds.add(...) - we assume 1 execution = 1 task for now to simplify
-            // Or we just don't track task IDs strictly.
-            // Prompt asked for it, but without task ID available in run(), we can't.
         }
     }
 
