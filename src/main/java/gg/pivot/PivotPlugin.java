@@ -28,6 +28,10 @@ public class PivotPlugin extends JavaPlugin {
     private BukkitTask tpsTask;
     private BukkitTask flushTask;
 
+    // Added for Phase 3A
+    private ConfigManager configManager;
+    private TickProfiler tickProfiler;
+
     // ⚡ Bolt Optimization: Cache player count to avoid main thread blocking
     private final AtomicInteger onlinePlayerCount = new AtomicInteger(0);
 
@@ -47,6 +51,9 @@ public class PivotPlugin extends JavaPlugin {
 
         // Save default config if not exists
         saveDefaultConfig();
+
+        // Initialize ConfigManager
+        this.configManager = new ConfigManager(this);
 
         // Validate configuration
         if (!validateConfig()) {
@@ -71,6 +78,10 @@ public class PivotPlugin extends JavaPlugin {
 
         // Initialize event collector
         eventCollector = new EventCollector(this);
+
+        // Initialize TickProfiler
+        tickProfiler = new TickProfiler(this, configManager);
+        eventCollector.setTickProfiler(tickProfiler);
 
         // Register event listener (only if collection enabled)
         if (getConfig().getBoolean("collection.enabled", true)) {

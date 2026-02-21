@@ -38,6 +38,9 @@ public class EventCollector {
     private final OkHttpClient httpClient;
     private volatile String apiKey;
 
+    // Added for Phase 3A
+    private TickProfiler tickProfiler;
+
     // ⚡ Bolt Optimization: Use ConcurrentLinkedQueue to avoid blocking main thread with locks
     private final Queue<PlayerEventData> playerEvents = new ConcurrentLinkedQueue<>();
     private final Queue<JsonObject> performanceEvents = new ConcurrentLinkedQueue<>();
@@ -69,6 +72,10 @@ public class EventCollector {
                 .readTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
                 .writeTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
                 .build();
+    }
+
+    public void setTickProfiler(TickProfiler tickProfiler) {
+        this.tickProfiler = tickProfiler;
     }
 
     /**
@@ -241,8 +248,14 @@ public class EventCollector {
             logger.info("Flush called - checking for events to send");
         }
 
+        // Collect Tick Profile
+        JsonObject tickProfileEvent = null;
+        if (tickProfiler != null) {
+            tickProfileEvent = tickProfiler.collectSample();
+        }
+
         // ⚡ Bolt Optimization: Early return if queues empty to avoid allocations
-        if (playerEvents.isEmpty() && performanceEvents.isEmpty() && serverEvents.isEmpty()) {
+        if (playerEvents.isEmpty() && performanceEvents.isEmpty() && serverEvents.isEmpty() && tickProfileEvent == null) {
             if (debugEnabled) {
                 logger.info("No events to send");
             }
@@ -294,8 +307,8 @@ public class EventCollector {
             logger.info("Events to send - Player: " + playerArray.size() + ", Performance: " + perfArray.size() + ", Server: " + serverArray.size());
         }
 
-        // Nothing to send
-        if (playerArray.size() == 0 && perfArray.size() == 0 && serverArray.size() == 0) {
+        // Nothing to send (double check)
+        if (playerArray.size() == 0 && perfArray.size() == 0 && serverArray.size() == 0 && tickProfileEvent == null) {
             return;
         }
 
@@ -305,6 +318,12 @@ public class EventCollector {
         payload.add("player_events", playerArray);
         payload.add("performance_events", perfArray);
         payload.add("server_events", serverArray);
+
+        if (tickProfileEvent != null) {
+             JsonArray tpArray = new JsonArray();
+             tpArray.add(tickProfileEvent);
+             payload.add("tick_profile_events", tpArray);
+        }
 
         String json = payload.toString();
 
