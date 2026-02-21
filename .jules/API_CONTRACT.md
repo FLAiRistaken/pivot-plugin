@@ -70,12 +70,13 @@ X-API-Key: pvt_<random_token>
 
 | Endpoint Type | Limit | Window |
 |--------------|-------|--------|
-| Authentication | Unlimited | - |
-| Event Ingestion | Unlimited | - |
-| Analytics Queries | 100 requests | 1 hour |
-| Server Management | Unlimited | - |
+| Authentication | Limit varies (e.g., 5/minute) | - |
+| Event Ingestion | 1000/hour (Key) + 50/minute (IP) | - |
+| Analytics Queries | 100 requests (varies) | 1 hour |
+| Server Management | Unlimited (except Rotate Key) | - |
 | AI Insights (Pro) | 50 requests | 24 hours |
 | AI Insights (Elite) | 200 requests | 24 hours |
+| Downloads | 10 requests | 1 hour |
 
 **Rate Limit Headers:**
 ```
@@ -91,6 +92,18 @@ X-RateLimit-Reset: 1735398000
     "code": "RATE_LIMIT_EXCEEDED",
     "message": "Rate limit exceeded. Try again in 3600 seconds."
   }
+}
+```
+
+---
+
+### BillingUsage
+
+```typescript
+{
+  servers_used: int
+  server_limit: int
+  data_retention_days: int
 }
 ```
 
@@ -167,6 +180,8 @@ All errors follow a standardized format with error codes:
 
 Register a new user account.
 
+**Rate Limit:** 5/hour
+
 **Request Body:**
 ```json
 {
@@ -213,6 +228,8 @@ Register a new user account.
 #### `POST /v1/auth/login`
 
 Authenticate existing user.
+
+**Rate Limit:** 5/minute
 
 **Request Body:**
 ```json
@@ -280,7 +297,7 @@ Request password reset email.
 
 **Notes:**
 - Always returns success to prevent email enumeration.
-- Rate limited: 5/hour.
+- Rate limited: 3/hour.
 
 ---
 
@@ -291,7 +308,7 @@ Reset password using token from email.
 **Request Body:**
 ```json
 {
-  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "token": "reset_token_string",
   "new_password": "newsecurepassword123"
 }
 ```
@@ -299,7 +316,7 @@ Reset password using token from email.
 **Success Response (200 OK):**
 ```json
 {
-  "message": "Password reset successful"
+  "message": "Password updated successfully"
 }
 ```
 
@@ -373,21 +390,33 @@ List all **active** servers for authenticated user (excludes deleted servers).
 
 **Success Response (200 OK):**
 ```json
-[
-  {
-    "id": "f86dfb9d-f74e-40dd-8c62-4c53833d1477",
-    "user_id": "4fc857d6-27a1-497e-b02c-98be2683b4bf",
-    "name": "My Survival Server",
-    "description": "Main survival world",
-    "hostname": "play.example.com",
-    "is_active": true,
-    "last_event_at": "2026-01-07T10:00:00Z",
-    "current_players": 0,
-    "peak_players_24h": 0,
-    "avg_tps_24h": null,
-    "created_at": "2026-01-07T10:00:00Z"
+{
+  "servers": [
+    {
+      "id": "f86dfb9d-f74e-40dd-8c62-4c53833d1477",
+      "user_id": "4fc857d6-27a1-497e-b02c-98be2683b4bf",
+      "name": "My Survival Server",
+      "description": "Main survival world",
+      "hostname": "play.example.com",
+      "is_active": true,
+      "last_event_at": "2026-01-07T10:00:00Z",
+      "current_players": 0,
+      "peak_players_24h": 0,
+      "avg_tps_24h": null,
+      "created_at": "2026-01-07T10:00:00Z"
+    }
+  ],
+  "usage": {
+    "servers_used": 1,
+    "server_limit": 1,
+    "percentage": 100.0,
+    "can_add_more": false
+  },
+  "subscription": {
+    "tier": "free",
+    "data_retention_days": 7
   }
-]
+}
 ```
 **Note:** `current_players`, `peak_players_24h`, and `avg_tps_24h` are placeholders for future computed metrics. Current implementation always returns `0` or `null`.
 
@@ -754,14 +783,16 @@ X-API-Key: pvt_uP1JM4bRsoizE-sgBIlVu1458F9VKqmnwebxktAUHAQ
       "event_type": "PLAYER_JOIN",
       "player_uuid": "069a79f4-44e9-4726-a5be-fca90e38aaf5",
       "player_name": "Notch",
-      "hostname": "play.example.com"
+      "hostname": "play.example.com",
+      "connection_type": "java"
     },
     {
       "timestamp": 1735398300000,
       "event_type": "PLAYER_QUIT",
       "player_uuid": "069a79f4-44e9-4726-a5be-fca90e38aaf5",
       "player_name": "Notch",
-      "hostname": null
+      "quit_reason": "Disconnected",
+      "session_clean": true
     }
   ],
   "performance_events": [
@@ -769,6 +800,12 @@ X-API-Key: pvt_uP1JM4bRsoizE-sgBIlVu1458F9VKqmnwebxktAUHAQ
       "timestamp": 1735398000000,
       "tps": 19.8,
       "player_count": 12
+    }
+  ],
+  "server_events": [
+    {
+      "timestamp": 1735398000000,
+      "event_type": "SERVER_START"
     }
   ]
 }
@@ -782,6 +819,13 @@ X-API-Key: pvt_uP1JM4bRsoizE-sgBIlVu1458F9VKqmnwebxktAUHAQ
 - `player_uuid` (string): Minecraft player UUID (with hyphens)
 - `player_name` (string): Player's in-game name
 - `hostname` (string, optional): Join hostname for attribution tracking
+- `quit_reason` (string, optional): Reason for disconnect
+- `session_clean` (boolean, optional): Whether session ended cleanly
+- `connection_type` (string, optional): Client type (e.g. "java")
+
+**ServerEvent:**
+- `timestamp` (int): Unix timestamp in milliseconds
+- `event_type` (string): `"SERVER_START"` or `"SERVER_STOP"`
 
 **PerformanceEvent:**
 - `timestamp` (int): Unix timestamp in milliseconds
@@ -1329,58 +1373,34 @@ AI-generated insights and recommendations.
 GET /v1/analytics/servers/f86dfb9d-f74e-40dd-8c62-4c53833d1477/insights?hours=24
 ```
 
-**Success Response (Pro/Elite tiers):**
+**Success Response:**
 ```json
 {
+  "server_id": "f86dfb9d-f74e-40dd-8c62-4c53833d1477",
+  "server_name": "My Survival Server",
+  "analysis_period_hours": 24,
   "insights": [
     {
-      "id": "550e8400-e29b-41d4-a716-446655440000",
       "severity": "critical",
       "category": "performance",
       "title": "Server TPS dropping during peak hours",
-      "description": "Average TPS fell to 16.2 during 18:00-20:00 UTC",
+      "message": "Average TPS fell to 16.2 during 18:00-20:00 UTC",
       "recommendation": "Consider optimizing entity counts or upgrading server resources",
-      "confidence": 89,
-      "source": "ai",
-      "metadata": {
-        "affected_hours": ["18:00", "19:00", "20:00"],
-        "avg_tps": 16.2
-      },
-      "created_at": "2026-02-07T12:00:00Z"
+      "timestamp": "2026-02-07T12:00:00Z",
+      "impact": "high"
     }
   ],
+  "total_insights": 1,
+  "critical_count": 1,
+  "warning_count": 0,
+  "info_count": 2,
+  "generated_at": "2026-01-07T10:00:00Z",
   "insight_counts": {
-    "rule_based": 0,
+    "rule_based": 2,
     "ai_generated": 1,
-    "total": 1
+    "total": 3
   },
   "has_ai_insights": true
-}
-```
-
-**Success Response (Free tier):**
-```json
-{
-  "insights": [
-    {
-      "id": "550e8400-e29b-41d4-a716-446655440001",
-      "severity": "info",
-      "category": "performance",
-      "title": "Stable performance",
-      "description": "Server performance looks good.",
-      "recommendation": "Keep it up.",
-      "confidence": null,
-      "source": "rule_based",
-      "metadata": {},
-      "created_at": "2026-02-07T12:00:00Z"
-    }
-  ],
-  "insight_counts": {
-    "rule_based": 1,
-    "ai_generated": 0,
-    "total": 1
-  },
-  "has_ai_insights": false
 }
 ```
 
@@ -1529,11 +1549,10 @@ curl -X POST https://api.pivot.gg/v1/analytics/insights/{insight_id}/feedback \
 Download the latest Pivot Analytics plugin JAR file.
 
 **Authentication:** None (public endpoint)
+**Rate Limit:** 10/hour
 
-**Success Response (200 OK):**
-- **Content-Type:** `application/java-archive`
-- **Content-Disposition:** `attachment; filename="PivotPlugin.jar"`
-- **Body:** Binary JAR file
+**Success Response (302 Found):**
+- **Location:** Redirects to the latest release asset on GitHub.
 
 **Error Responses:**
 - `404 Not Found`: Plugin file not available
@@ -1599,9 +1618,19 @@ Get user preferences (UI settings, notifications).
 **Success Response (200 OK):**
 ```json
 {
-  "theme": "system",
-  "email_notifications": true,
-  "beta_features": false
+  "notifications": {
+    "email_enabled": true,
+    "performance_alerts": true,
+    "player_alerts": true,
+    "weekly_summary": true,
+    "alert_threshold_tps": 18.0
+  },
+  "display": {
+    "default_time_range": "24h",
+    "default_chart_type": "line",
+    "number_format": "compact",
+    "date_format": "local"
+  }
 }
 ```
 
@@ -1616,7 +1645,9 @@ Update user preferences. Deep merge supported.
 **Request Body:**
 ```json
 {
-  "theme": "dark"
+  "display": {
+    "default_chart_type": "bar"
+  }
 }
 ```
 
@@ -1643,6 +1674,29 @@ Change current password.
 {
   "message": "Password updated successfully"
 }
+```
+
+---
+
+#### `GET /v1/billing/invoices`
+
+Get billing history (invoices).
+
+**Authentication:** Required (JWT)
+
+**Success Response (200 OK):**
+```json
+[
+  {
+    "id": "in_1Pm...",
+    "date": "2026-01-01T12:00:00Z",
+    "amount": 900,
+    "currency": "usd",
+    "status": "paid",
+    "description": "Pro Plan",
+    "invoice_pdf": "https://pay.stripe.com/invoice/..."
+  }
+]
 ```
 
 ---
@@ -1699,11 +1753,20 @@ Get current subscription status and usage.
 {
   "tier": "free",
   "status": "active",
-  "current_period_end": null,
+  "next_billing_date": "2026-03-01T12:00:00Z",
+  "billing_period": "monthly",
   "cancel_at_period_end": false,
+  "payment_method": {
+    "type": "card",
+    "last4": "4242",
+    "brand": "visa",
+    "exp_month": 12,
+    "exp_year": 2026
+  },
   "usage": {
-    "servers": 1,
-    "server_limit": 1
+    "servers_used": 1,
+    "server_limit": 1,
+    "data_retention_days": 7
   },
   "data_retention_days": 7
 }
@@ -1721,8 +1784,36 @@ Get current subscription status and usage.
   email: string
   full_name: string | null
   is_active: boolean
-  subscription_tier: "free" | "pro" | "enterprise"
+  subscription_tier: "free" | "pro" | "elite"
+  subscription_status: string
+  stripe_customer_id: string | null
+  stripe_subscription_id: string | null
+  subscription_current_period_end: DateTime | null
+  trial_end: DateTime | null
+  timezone: string | null
   created_at: DateTime
+}
+```
+
+---
+
+### UserPreferences
+
+```typescript
+{
+  notifications: {
+    email_enabled: boolean
+    performance_alerts: boolean
+    player_alerts: boolean
+    weekly_summary: boolean
+    alert_threshold_tps: float
+  }
+  display: {
+    default_time_range: "1h" | "6h" | "24h" | "7d" | "30d"
+    default_chart_type: "line" | "area" | "bar"
+    number_format: string
+    date_format: string
+  }
 }
 ```
 
@@ -1779,12 +1870,16 @@ Get current subscription status and usage.
   id: UUID
   timestamp: DateTime
   server_id: UUID
-  event_type: "PLAYER_JOIN" | "PLAYER_QUIT" | "TPS_SAMPLE"
+  event_type: "PLAYER_JOIN" | "PLAYER_QUIT" | "TPS_SAMPLE" | "SERVER_START" | "SERVER_STOP"
   player_uuid: UUID | null
   player_name: string | null
   hostname: string | null
   tps: number | null
   player_count: number | null
+  quit_reason: string | null
+  session_clean: boolean | null
+  connection_type: string | null
+  event_metadata: JSON | null
 }
 ```
 
@@ -1794,16 +1889,14 @@ Get current subscription status and usage.
 
 ```typescript
 {
-  id: UUID
-  severity: "critical" | "warning" | "info"
-  category: string
+  severity: "critical" | "warning" | "info" | "success"
+  category: "performance" | "marketing" | "retention" | "operations"
   title: string
-  description: string
+  message: string
   recommendation: string
-  confidence: integer | null // 0-100, only for AI insights
-  source: "ai" | "rule_based"
-  metadata: object
-  created_at: DateTime
+  timestamp: DateTime | null
+  source: "rule" | "ai"
+  confidence: float | null
 }
 ```
 

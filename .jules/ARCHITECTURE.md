@@ -28,8 +28,9 @@ Pivot Analytics is a three-tier SaaS platform that provides real-time performanc
 ### Core Value Proposition
 - **Lag-Churn Correlation**: Identifies when TPS drops cause player disconnects
 - **Marketing Attribution**: Tracks which hostnames drive player acquisition
-- **AI-Powered Insights**: Generates actionable recommendations from event data
+- **AI-Powered Insights**: Generates actionable recommendations from event data (Powered by Claude Haiku for Pro/Elite tiers)
 - **Real-Time Monitoring**: Sub-minute latency from event to dashboard
+- **Billing & Subscriptions**: Stripe-integrated tiers (Free, Pro, Elite/Enterprise)
 
 ---
 
@@ -54,8 +55,9 @@ Pivot Analytics is a three-tier SaaS platform that provides real-time performanc
 │  ┌────────────────┐  ┌────────────────┐  ┌─────────────────┐   │
 │  │  Auth Module   │  │ Ingest Module  │  │ Analytics Module│   │
 │  │  - JWT tokens  │  │ - Event batch  │  │ - TPS stats     │   │
+│  │  - Stripe API  │  │ - Validation   │  │ - AI Insights   │   │
 │  │  - API keys    │  │ - Validation   │  │ - Attribution   │   │
-│  │  - User CRUD   │  │ - Timestamping │  │ - Insights AI   │   │
+│  │  - User CRUD   │  │ - Timestamping │  │ - Attribution   │   │
 │  └────────────────┘  └────────────────┘  └─────────────────┘   │
 └───────────────────────────┬─────────────────────────────────────┘
                             │
@@ -645,6 +647,12 @@ CREATE TABLE users (
     full_name VARCHAR(255),
     is_active BOOLEAN DEFAULT true NOT NULL,
     subscription_tier VARCHAR(50) DEFAULT 'free' NOT NULL,
+    subscription_status VARCHAR(50),
+    stripe_customer_id VARCHAR(255),
+    stripe_subscription_id VARCHAR(255),
+    subscription_current_period_end TIMESTAMP,
+    trial_end TIMESTAMP,
+    preferences JSONB,
     created_at TIMESTAMP DEFAULT NOW() NOT NULL,
     updated_at TIMESTAMP DEFAULT NOW() NOT NULL
 );
@@ -1079,10 +1087,9 @@ java -jar paper-1.20.1.jar nogui
 4. **Server Comparison:** Compare multiple servers side-by-side
 
 ### Medium-Term (Next 6 Months)
-1. **Billing Integration:** Stripe for paid tiers (Pro/Enterprise)
-2. **Team Accounts:** Multi-user access to servers
-3. **Custom Alerts:** User-defined thresholds for notifications
-4. **Export Data:** CSV/JSON exports of analytics
+1. **Team Accounts:** Multi-user access to servers
+2. **Custom Alerts:** User-defined thresholds for notifications
+3. **Export Data:** CSV/JSON exports of analytics
 
 ### Long-Term (Next 12 Months)
 1. **Predictive Analytics:** ML models for churn prediction

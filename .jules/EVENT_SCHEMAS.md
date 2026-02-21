@@ -58,6 +58,7 @@ Events are the core data primitive in Pivot Analytics. All data originates from 
 |----------|-------------|-----------|---------|
 | **Player Activity** | `PLAYER_JOIN`, `PLAYER_QUIT` | Per player action | Track sessions, attribution |
 | **Performance** | `TPS_SAMPLE` | Every 30 seconds | Monitor server health |
+| **Server Lifecycle** | `SERVER_START`, `SERVER_STOP` | On server start/stop | Track uptime and crashes |
 
 ---
 
@@ -76,6 +77,9 @@ All events are sent in batches via `POST /v1/ingest` endpoint.
   ],
   "performance_events": [
     {/* PerformanceEvent objects */}
+  ],
+  "server_events": [
+    {/* ServerEvent objects */}
   ]
 }
 ```
@@ -88,6 +92,7 @@ All events are sent in batches via `POST /v1/ingest` endpoint.
 | `batch_timestamp` | integer | Yes | When batch was created | Unix timestamp (milliseconds) |
 | `player_events` | array | Yes | Player JOIN/QUIT events | Can be empty array `[]` |
 | `performance_events` | array | Yes | TPS samples | Can be empty array `[]` |
+| `server_events` | array | Yes | Server START/STOP events | Can be empty array `[]` |
 
 ### Pydantic Schema (Python)
 
@@ -100,6 +105,7 @@ class EventBatch(BaseModel):
     batch_timestamp: int
     player_events: List[PlayerEvent] = []
     performance_events: List[PerformanceEvent] = []
+    server_events: List[ServerEvent] = []
 ```
 
 ### Java Implementation
@@ -138,7 +144,10 @@ Triggered when a player joins the server.
   "event_type": "PLAYER_JOIN",
   "player_uuid": "069a79f4-44e9-4726-a5be-fca90e38aaf5",
   "player_name": "Notch",
-  "hostname": "play.example.com"
+  "hostname": "play.example.com",
+  "quit_reason": null,
+  "session_clean": null,
+  "connection_type": "premium"
 }
 ```
 
@@ -151,6 +160,7 @@ Triggered when a player joins the server.
 | `player_uuid` | string | Yes | Minecraft player UUID | Valid UUID with hyphens, 36 chars | `"069a79f4-44e9-4726-a5be-fca90e38aaf5"` |
 | `player_name` | string | Yes | Player's in-game name | 1-16 characters, alphanumeric + underscore | `"Notch"` |
 | `hostname` | string | No | Join hostname for attribution | 1-255 characters, can be null | `"play.example.com"` |
+| `connection_type` | string | No | Type of connection | 1-20 characters, e.g. "premium", "cracked", "bedrock" | `"premium"` |
 
 #### Purpose
 
@@ -249,7 +259,10 @@ Triggered when a player leaves the server.
   "event_type": "PLAYER_QUIT",
   "player_uuid": "069a79f4-44e9-4726-a5be-fca90e38aaf5",
   "player_name": "Notch",
-  "hostname": null
+  "hostname": null,
+  "quit_reason": "Disconnected",
+  "session_clean": true,
+  "connection_type": null
 }
 ```
 
@@ -262,6 +275,8 @@ Triggered when a player leaves the server.
 | `player_uuid` | string | Yes | Minecraft player UUID | Valid UUID with hyphens | `"069a79f4-44e9-4726-a5be-fca90e38aaf5"` |
 | `player_name` | string | Yes | Player's in-game name | 1-16 characters | `"Notch"` |
 | `hostname` | null | No | Always null for quit events | Must be `null` | `null` |
+| `quit_reason` | string | No | Reason player left | 1-100 characters | `"Disconnected"` |
+| `session_clean` | boolean | No | Clean disconnect vs crash/timeout | True/False | `true` |
 
 #### Purpose
 
@@ -343,6 +358,35 @@ INSERT INTO events (
    ```
 
 ---
+
+
+## Server Lifecycle Events
+
+### SERVER_START
+
+Triggered when the server finishes starting up and Pivot plugin is enabled.
+
+#### Schema
+
+```json
+{
+  "timestamp": 1735398000000,
+  "event_type": "SERVER_START"
+}
+```
+
+### SERVER_STOP
+
+Triggered when the server shuts down gracefully.
+
+#### Schema
+
+```json
+{
+  "timestamp": 1735398000000,
+  "event_type": "SERVER_STOP"
+}
+```
 
 ## Performance Events
 
