@@ -1569,7 +1569,7 @@ Download the latest Pivot Analytics plugin JAR file.
 
 ### User Settings Endpoints
 
-#### `GET /v1/user/profile`
+#### `GET /v1/users/me`
 
 Get current user profile.
 
@@ -1590,7 +1590,7 @@ Get current user profile.
 
 ---
 
-#### `PATCH /v1/user/profile`
+#### `PATCH /v1/users/me`
 
 Update user profile details.
 
@@ -1609,7 +1609,27 @@ Update user profile details.
 
 ---
 
-#### `GET /v1/user/preferences`
+#### `POST /v1/users/me/avatar`
+
+Upload user avatar. Max size: 5MB. Allowed types: jpeg, png, webp.
+
+**Authentication:** Required (JWT)
+
+**Rate Limit:** 10/hour
+
+**Request Body:**
+Form-data containing the file with key `file`.
+
+**Success Response (200 OK):**
+```json
+{
+  "avatar_url": "https://s3.example.com/avatars/user-id/uuid.jpg"
+}
+```
+
+---
+
+#### `GET /v1/users/me/preferences`
 
 Get user preferences (UI settings, notifications).
 
@@ -1636,7 +1656,7 @@ Get user preferences (UI settings, notifications).
 
 ---
 
-#### `PATCH /v1/user/preferences`
+#### `PATCH /v1/users/me/preferences`
 
 Update user preferences. Deep merge supported.
 
@@ -1655,7 +1675,7 @@ Update user preferences. Deep merge supported.
 
 ---
 
-#### `POST /v1/user/change-password`
+#### `POST /v1/users/me/change-password`
 
 Change current password.
 
@@ -1677,6 +1697,35 @@ Change current password.
 ```
 
 ---
+
+#### `DELETE /v1/users/me/account`
+
+Soft delete user account.
+
+**Authentication:** Required (JWT)
+
+**Rate Limit:** 3/hour
+
+**Request Body:**
+```json
+{
+  "password": "currentpassword"
+}
+```
+
+**Success Response (200 OK):**
+```json
+{
+  "message": "Account deleted successfully"
+}
+```
+
+**Error Responses:**
+- `400 VALIDATION_ERROR` – User has an active or trialing subscription (must cancel first)
+- `401 UNAUTHORIZED` – Incorrect password
+
+---
+
 
 #### `GET /v1/billing/invoices`
 
@@ -2012,12 +2061,16 @@ Get current subscription status and usage.
 
 ## Changelog
 
+**v1.4.1 (2026-02-18)**
+- Added `DELETE /v1/users/me/account` for soft account deletion
+- Updated user endpoints to canonical `/v1/users/me` path
+
 **v1.4.0 (2026-02-07)**
 - Added **AI Insights** feature for Pro/Elite tiers with confidence scores and source attribution
 - Added `POST /v1/analytics/insights/{insight_id}/feedback` endpoint
 - Updated `GET /v1/analytics/servers/{server_id}/insights` to support AI/rule-based differentiation
 - Enhanced `Insight` schema with `confidence`, `source`, and `metadata` fields
-- Added `UserPreferences` model and updated `/v1/user/preferences` endpoints
+- Added `UserPreferences` model and updated `/v1/users/me/preferences` endpoints
 - Updated `Event` model and ingestion endpoint to support `SERVER_START`/`STOP` and connection details
 - Refined `GET /v1/servers` response structure
 - Added specific rate limits for AI generation and updated general rate limits
