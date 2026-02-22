@@ -55,3 +55,22 @@ debug:
 
   # Log every event batch sent (shows full JSON payload)
   log-batches: false
+
+profiling:
+  enabled: true
+  mode: auto  # auto | paper_only | custom_only | disabled
+  # NOTE: The sampling, triggers and privacy.share_anonymous_data options below
+  # are not yet implemented and have no effect on current behavior.
+  # They are placeholders for future releases and may change.
+  sampling:
+    duration_seconds: 30
+    interval_minutes: 5
+  triggers:
+    auto_profile_on_lag: true
+    lag_threshold_tps: 18.0
+  privacy:
+    share_anonymous_data: true
+    anonymize_plugin_names: false
+  performance:
+    max_overhead_ms: 0.2
+    auto_disable_on_overhead: true

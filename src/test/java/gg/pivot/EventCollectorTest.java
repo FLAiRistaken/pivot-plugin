@@ -1,5 +1,6 @@
 package gg.pivot;
 
+import com.google.gson.JsonObject;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -12,6 +13,8 @@ import java.util.logging.Logger;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -90,5 +93,36 @@ public class EventCollectorTest {
         when(config.getString("api.key")).thenReturn("abc_validlenghtbutwrongprefix");
         EventCollector collector4 = new EventCollector(plugin);
         assertNull(apiKeyField.get(collector4), "Key with wrong prefix should be rejected (null)");
+    }
+
+    @Test
+    public void testFlushDoesNotDropTickProfileEventWhenQueuesEmpty() throws Exception {
+        // Use a mock logger so we can assert on log messages
+        Logger mockLogger = mock(Logger.class);
+        when(plugin.getLogger()).thenReturn(mockLogger);
+        when(plugin.getConfig()).thenReturn(config);
+        when(plugin.getApiKey()).thenReturn(null); // sendToAPI will be a no-op; this test only verifies early-return logic
+        // Enable debug mode so the "No events to send" path becomes observable
+        when(config.getBoolean("debug.enabled", false)).thenReturn(true);
+        when(config.getBoolean("debug.log-batches", false)).thenReturn(false);
+        when(config.getBoolean("privacy.anonymize-players", false)).thenReturn(false);
+
+        EventCollector collector = new EventCollector(plugin);
+
+        // Create a mock TickProfiler that returns a non-null sample event
+        TickProfiler mockProfiler = mock(TickProfiler.class);
+        JsonObject profileEvent = new JsonObject();
+        profileEvent.addProperty("event_type", "TICK_PROFILE");
+        profileEvent.addProperty("timestamp", 1234567890L);
+        when(mockProfiler.collectSample()).thenReturn(profileEvent);
+        collector.setTickProfiler(mockProfiler);
+
+        // All event queues are empty – only the tick profile event is present
+        collector.flush();
+
+        // Verify collectSample() was invoked
+        verify(mockProfiler).collectSample();
+        // Verify the early-return was NOT taken (the "No events to send" log must NOT appear)
+        verify(mockLogger, never()).info("No events to send");
     }
 }

@@ -39,7 +39,7 @@ This project is split across **4 AI chat contexts**:
 ### Examples of Event Structure Changes:
 - Adding `server_region` field to TPS_SAMPLE events
 - Renaming `hostname` to `connection_hostname`
-- Adding new event type `PLAYER_KICK`
+- Adding new event type `SERVER_START`
 
 ---
 
@@ -72,7 +72,7 @@ This project is split across **4 AI chat contexts**:
 ### Examples of New Endpoints:
 - `GET /v1/analytics/servers/{id}/player-retention` - Dashboard needs new chart
 - `POST /v1/servers/{id}/alerts` - Dashboard needs alerts UI
-- `GET /v1/analytics/servers/{id}/export` - Dashboard needs download button
+- `GET /v1/billing/subscription` - Dashboard needs to show Stripe subscription data
 
 ---
 
@@ -252,6 +252,7 @@ Questions: Reply in this chat or tag @orchestrator
 **Safe changes that don't require coordination:**
 - Adding new optional fields to responses
 - Adding new endpoints (if dashboard doesn't need them yet)
+- Adjusting Stripe API webhook models (unless exposing new events to Dashboard)
 - Internal refactoring (no API changes)
 - Performance optimizations
 - Bug fixes that don't change behavior
