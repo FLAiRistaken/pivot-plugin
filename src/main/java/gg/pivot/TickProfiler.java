@@ -253,6 +253,7 @@ public class TickProfiler {
             p.addProperty("percentage_of_tick", Math.round(percentage * 1000.0) / 1000.0);
             p.addProperty("sample_count", sampleCount);
             p.addProperty("event_count", sampleCount);
+            p.addProperty("task_count", 0);
 
             pluginsArray.add(p);
         }

@@ -1,17 +1,20 @@
 package gg.pivot;
 
+import com.google.gson.JsonArray;
+import com.google.gson.JsonObject;
+import org.bukkit.Server;
+import org.bukkit.plugin.PluginManager;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.lang.reflect.Field;
-import java.util.Map;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.logging.Logger;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.mock;
 
 @ExtendWith(MockitoExtension.class)
 public class TickProfilerTest {
@@ -77,5 +80,84 @@ public class TickProfilerTest {
         Field autoDisabledField = TickProfiler.class.getDeclaredField("autoDisabled");
         autoDisabledField.setAccessible(true);
         assertTrue((boolean) autoDisabledField.get(profiler), "autoDisabled must be true after shutdown");
+    }
+
+    @Test
+    public void testCollectSampleIncludesTaskCountAndEventCount() throws Exception {
+        TickProfiler profiler = createDisabledProfiler();
+
+        // Force enable profiling
+        Field profilingEnabledField = TickProfiler.class.getDeclaredField("profilingEnabled");
+        profilingEnabledField.setAccessible(true);
+        profilingEnabledField.set(profiler, true);
+
+        Field modeField = TickProfiler.class.getDeclaredField("mode");
+        modeField.setAccessible(true);
+        modeField.set(profiler, "custom_spigot");
+
+        // Inject sample data
+        Class<?> pluginSampleClass = null;
+        for (Class<?> c : TickProfiler.class.getDeclaredClasses()) {
+            if (c.getSimpleName().equals("PluginSample")) {
+                pluginSampleClass = c;
+                break;
+            }
+        }
+        assertNotNull(pluginSampleClass, "PluginSample class not found");
+        java.lang.reflect.Constructor<?> constructor = pluginSampleClass.getDeclaredConstructor(); constructor.setAccessible(true); Object sample = constructor.newInstance();
+
+        java.lang.reflect.Method addMethod = pluginSampleClass.getDeclaredMethod("add", long.class);
+        addMethod.setAccessible(true);
+        addMethod.invoke(sample, 1000000L); // 1ms
+
+        Field currentSpigotSamplesField = TickProfiler.class.getDeclaredField("currentSpigotSamples");
+        currentSpigotSamplesField.setAccessible(true);
+        java.util.concurrent.ConcurrentHashMap<String, Object> samples = (java.util.concurrent.ConcurrentHashMap) currentSpigotSamplesField.get(profiler);
+        samples.put("TestPlugin", sample);
+
+        // Mock Server and PluginManager
+        Server server = mock(Server.class);
+        when(plugin.getServer()).thenReturn(server);
+        when(server.getVersion()).thenReturn("1.20.4");
+
+        PluginManager pm = mock(PluginManager.class);
+        when(server.getPluginManager()).thenReturn(pm);
+        when(pm.getPlugins()).thenReturn(new org.bukkit.plugin.Plugin[0]);
+
+        // Fix TPSUtil (static state manipulation)
+        Field tpsInitialized = TPSUtil.class.getDeclaredField("initialized");
+        tpsInitialized.setAccessible(true);
+        boolean wasInitialized = (boolean) tpsInitialized.get(null);
+        tpsInitialized.set(null, true);
+
+        // Also ensure isPaper and isSpigot are false to use fallback (safe)
+        Field tpsIsPaper = TPSUtil.class.getDeclaredField("isPaper");
+        tpsIsPaper.setAccessible(true);
+        boolean wasPaper = (boolean) tpsIsPaper.get(null);
+        tpsIsPaper.set(null, false);
+
+        Field tpsIsSpigot = TPSUtil.class.getDeclaredField("isSpigot");
+        tpsIsSpigot.setAccessible(true);
+        boolean wasSpigot = (boolean) tpsIsSpigot.get(null);
+        tpsIsSpigot.set(null, false);
+
+        try {
+            JsonObject result = profiler.collectSample();
+            assertNotNull(result, "collectSample should return non-null result");
+
+            JsonArray plugins = result.getAsJsonArray("plugins");
+            assertEquals(1, plugins.size(), "Should have 1 plugin sample");
+
+            JsonObject p = plugins.get(0).getAsJsonObject();
+
+            assertTrue(p.has("event_count"), "Payload must contain event_count");
+            assertTrue(p.has("task_count"), "Payload must contain task_count");
+            assertEquals(0, p.get("task_count").getAsInt(), "task_count must default to 0");
+        } finally {
+            // Restore TPSUtil state to avoid polluting other tests if any
+            tpsInitialized.set(null, wasInitialized);
+            tpsIsPaper.set(null, wasPaper);
+            tpsIsSpigot.set(null, wasSpigot);
+        }
     }
 }
