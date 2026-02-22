@@ -3,17 +3,20 @@ package gg.pivot;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import org.bukkit.Bukkit;
-import org.bukkit.Server;
+import org.bukkit.event.Event;
+import org.bukkit.event.EventException;
+import org.bukkit.event.HandlerList;
+import org.bukkit.event.Listener;
+import org.bukkit.plugin.EventExecutor;
 import org.bukkit.plugin.Plugin;
-import org.bukkit.scheduler.BukkitScheduler;
+import org.bukkit.plugin.RegisteredListener;
 import org.bukkit.scheduler.BukkitTask;
 
-import java.lang.reflect.*;
+import java.lang.reflect.Field;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.*;
-import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -41,8 +44,7 @@ public class TickProfiler {
     private Field handlersField;
 
     // Spigot custom profiling state
-    private Object originalScheduler;
-    private BukkitScheduler proxyScheduler;
+    private final List<WrappedListenerInfo> wrappedListeners = new ArrayList<>();
     // Plugin Name -> Sample
     private volatile ConcurrentHashMap<String, PluginSample> currentSpigotSamples = new ConcurrentHashMap<>();
 
@@ -54,7 +56,6 @@ public class TickProfiler {
     private final AtomicLong lastSampleTimestampMs = new AtomicLong(System.currentTimeMillis());
 
     // Saved scheduler field reference for restoring the original scheduler on shutdown
-    private volatile Field savedSchedulerField;
 
     public TickProfiler(PivotPlugin plugin, ConfigManager configManager) {
         this.plugin = plugin;
@@ -64,7 +65,7 @@ public class TickProfiler {
         initialize();
     }
 
-    private void initialize() {
+        private void initialize() {
         if (!configManager.isProfilingEnabled()) {
             this.profilingEnabled = false;
             this.mode = "disabled";
@@ -100,57 +101,44 @@ public class TickProfiler {
         if (paperDetected && !configuredMode.equals("custom_only")) {
             this.mode = "paper_timings";
             this.isPaper = true;
-            if (!setupSpigotProxy()) {
-                logger.warning("TickProfiler: Spigot proxy setup failed; Paper mode will not have Spigot fallback.");
-            }
             this.profilingEnabled = true;
             logger.info("TickProfiler initialised in paper_timings mode");
         } else {
             this.mode = "custom_spigot";
             this.isPaper = false;
-            if (setupSpigotProxy()) {
+            if (setupSpigotProfiling()) {
                 this.profilingEnabled = true;
                 logger.info("TickProfiler initialised in custom_spigot mode");
             } else {
                 this.profilingEnabled = false;
-                this.mode = "disabled (proxy failed)";
+                this.mode = "disabled (profiling setup failed)";
             }
         }
     }
 
-    private boolean setupSpigotProxy() {
+        private boolean setupSpigotProfiling() {
         try {
-            Server server = Bukkit.getServer();
-            // Try to find the scheduler field in CraftServer
-            // Usually 'scheduler' or 'taskScheduler'
-            Field schedulerField = null;
-            try {
-                schedulerField = server.getClass().getDeclaredField("scheduler");
-            } catch (NoSuchFieldException e) {
-                try {
-                    schedulerField = server.getClass().getDeclaredField("taskScheduler");
-                } catch (NoSuchFieldException ex) {
-                    logger.warning("TickProfiler: Could not find scheduler field in " + server.getClass().getName());
-                    return false;
+            wrappedListeners.clear();
+            ArrayList<HandlerList> handlerLists = HandlerList.getHandlerLists();
+            for (HandlerList handlerList : handlerLists) {
+                RegisteredListener[] listeners = handlerList.getRegisteredListeners();
+                for (RegisteredListener listener : listeners) {
+                    Plugin plugin = listener.getPlugin();
+                    if (plugin == null) continue;
+                    String pluginName = plugin.getName();
+
+                    ProfiledRegisteredListener wrapped = new ProfiledRegisteredListener(listener, pluginName, this);
+                    handlerList.unregister(listener);
+                    handlerList.register(wrapped);
+
+                    wrappedListeners.add(new WrappedListenerInfo(handlerList, listener, wrapped));
                 }
             }
-
-            schedulerField.setAccessible(true);
-            this.originalScheduler = schedulerField.get(server);
-            this.savedSchedulerField = schedulerField; // Store for shutdown()
-
-            this.proxyScheduler = (BukkitScheduler) Proxy.newProxyInstance(
-                BukkitScheduler.class.getClassLoader(),
-                new Class[]{BukkitScheduler.class},
-                new SchedulerInvocationHandler(originalScheduler)
-            );
-
-            // Replace the scheduler
-            schedulerField.set(server, proxyScheduler);
             return true;
         } catch (Exception e) {
-            logger.severe("TickProfiler: Failed to setup proxy: " + e.getMessage());
+            logger.severe("TickProfiler: Failed to setup handler profiling: " + e.getMessage());
             e.printStackTrace();
+            profilingEnabled = false;
             return false;
         }
     }
@@ -259,139 +247,14 @@ public class TickProfiler {
             p.addProperty("total_time_ms", Math.round(totalTimeMs * 100.0) / 100.0);
             p.addProperty("percentage_of_tick", Math.round(percentage * 1000.0) / 1000.0);
             p.addProperty("sample_count", sampleCount);
-            p.addProperty("event_count", 0); // Not tracked in Spigot mode
-            p.addProperty("task_count", sample.taskIds.size());
+            p.addProperty("event_count", sampleCount);
+            p.addProperty("task_count", 0);
 
             pluginsArray.add(p);
         }
     }
 
     // --- Spigot Proxy ---
-
-    private class SchedulerInvocationHandler implements InvocationHandler {
-        private final Object delegate;
-
-        public SchedulerInvocationHandler(Object delegate) {
-            this.delegate = delegate;
-        }
-
-        @Override
-        public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
-            // When profiling is off, delegate directly with no wrapping or overhead tracking
-            if (!profilingEnabled || autoDisabled) {
-                try {
-                    return method.invoke(delegate, args);
-                } catch (InvocationTargetException e) {
-                    throw e.getCause();
-                }
-            }
-            long startOverhead = System.nanoTime();
-            try {
-                // Intercept runTask*, schedule*, and callSyncMethod methods
-                String name = method.getName();
-                // Declared outside the if block so it remains accessible for BukkitTask ID tracking below.
-                String trackedPluginName = null;
-                if ((name.startsWith("runTask") || name.startsWith("schedule") || name.equals("callSyncMethod")) && args != null && args.length > 0) {
-                    // Check args for Plugin and Runnable/Callable
-                    Plugin pluginArg = null;
-                    Runnable runnableArg = null;
-                    Callable<?> callableArg = null;
-                    int runnableIndex = -1;
-                    int callableIndex = -1;
-
-                    for (int i = 0; i < args.length; i++) {
-                        if (args[i] instanceof Plugin) {
-                            pluginArg = (Plugin) args[i];
-                        } else if (args[i] instanceof Runnable) {
-                            runnableArg = (Runnable) args[i];
-                            runnableIndex = i;
-                        } else if (args[i] instanceof Callable) {
-                            callableArg = (Callable<?>) args[i];
-                            callableIndex = i;
-                        }
-                    }
-
-                    if (pluginArg != null) {
-                        trackedPluginName = pluginArg.getName();
-                        final String pluginName = trackedPluginName;
-
-                        if (runnableArg != null && runnableIndex >= 0) {
-                            // Wrap Runnable
-                            args[runnableIndex] = new ProfiledRunnable(pluginName, runnableArg);
-                        } else if (callableArg != null && callableIndex >= 0) {
-                            // Wrap Callable
-                            args[callableIndex] = new ProfiledCallable(pluginName, callableArg);
-                        }
-                    }
-                }
-
-                // Delegate
-                Object result = method.invoke(delegate, args);
-
-                // Track distinct scheduled task IDs per plugin
-                if (result instanceof BukkitTask && trackedPluginName != null) {
-                    BukkitTask task = (BukkitTask) result;
-                    currentSpigotSamples.computeIfAbsent(trackedPluginName, k -> new PluginSample()).taskIds.add(task.getTaskId());
-                }
-
-                return result;
-
-            } catch (InvocationTargetException e) {
-                throw e.getCause();
-            } finally {
-                overheadNano.addAndGet(System.nanoTime() - startOverhead);
-            }
-        }
-    }
-
-    private class ProfiledRunnable implements Runnable {
-        private final String pluginName;
-        private final Runnable delegate;
-
-        public ProfiledRunnable(String pluginName, Runnable delegate) {
-            this.pluginName = pluginName;
-            this.delegate = delegate;
-        }
-
-        @Override
-        public void run() {
-            if (!profilingEnabled || autoDisabled) {
-                delegate.run();
-                return;
-            }
-            long start = System.nanoTime();
-            try {
-                delegate.run();
-            } finally {
-                long duration = System.nanoTime() - start;
-                record(pluginName, duration);
-            }
-        }
-    }
-
-    private class ProfiledCallable implements Callable<Object> {
-        private final String pluginName;
-        private final Callable<?> delegate;
-
-        public ProfiledCallable(String pluginName, Callable<?> delegate) {
-            this.pluginName = pluginName;
-            this.delegate = delegate;
-        }
-
-        @Override
-        public Object call() throws Exception {
-            if (!profilingEnabled || autoDisabled) {
-                return delegate.call();
-            }
-            long start = System.nanoTime();
-            try {
-                return delegate.call();
-            } finally {
-                long duration = System.nanoTime() - start;
-                record(pluginName, duration);
-            }
-        }
-    }
 
     private void record(String pluginName, long durationNano) {
         long startOverhead = System.nanoTime();
@@ -408,16 +271,53 @@ public class TickProfiler {
      * was installed. Must be called from {@code onDisable()} and any config reload
      * path to avoid leaving a stale proxy after the plugin is disabled.
      */
-    public synchronized void shutdown() {
+        public synchronized void shutdown() {
         profilingEnabled = false;
         autoDisabled = true;
-        if (originalScheduler != null && savedSchedulerField != null) {
+
+        for (WrappedListenerInfo info : wrappedListeners) {
+            info.list.unregister(info.wrapped);
+            info.list.register(info.original);
+        }
+        wrappedListeners.clear();
+        logger.info("TickProfiler: Restored original listeners");
+    }
+
+        private static EventExecutor getExecutor(RegisteredListener listener) {
             try {
-                Server server = Bukkit.getServer();
-                savedSchedulerField.set(server, originalScheduler);
-                logger.info("TickProfiler: Restored original scheduler");
+                Field executorField = RegisteredListener.class.getDeclaredField("executor");
+                executorField.setAccessible(true);
+                return (EventExecutor) executorField.get(listener);
             } catch (Exception e) {
-                logger.severe("TickProfiler: Failed to restore original scheduler: " + e.getMessage());
+                throw new RuntimeException("Failed to get executor from RegisteredListener", e);
+            }
+        }
+
+
+    private class ProfiledRegisteredListener extends RegisteredListener {
+        private final RegisteredListener delegate;
+        private final String pluginName;
+        private final TickProfiler profiler;
+
+                public ProfiledRegisteredListener(RegisteredListener delegate, String pluginName, TickProfiler profiler) {
+            super(delegate.getListener(), getExecutor(delegate), delegate.getPriority(), delegate.getPlugin(), delegate.isIgnoringCancelled());
+            this.delegate = delegate;
+            this.pluginName = pluginName;
+            this.profiler = profiler;
+        }
+
+        @Override
+        public void callEvent(Event event) throws EventException {
+            if (!profiler.profilingEnabled || profiler.autoDisabled) {
+                delegate.callEvent(event);
+                return;
+            }
+            long start = System.nanoTime();
+            try {
+                delegate.callEvent(event);
+            } finally {
+                long duration = System.nanoTime() - start;
+                profiler.record(pluginName, duration);
             }
         }
     }
@@ -478,13 +378,15 @@ public class TickProfiler {
         return Collections.unmodifiableMap(snapshot);
     }
 
-    /** Creates a profiled {@link Runnable} that can be used in unit tests. */
-    Runnable createProfiledRunnableForTesting(String pluginName, Runnable delegate) {
-        return new ProfiledRunnable(pluginName, delegate);
-    }
+    private static class WrappedListenerInfo {
+        final HandlerList list;
+        final RegisteredListener original;
+        final RegisteredListener wrapped;
 
-    /** Creates a profiled {@link Callable} that can be used in unit tests. */
-    Callable<Object> createProfiledCallableForTesting(String pluginName, Callable<?> delegate) {
-        return new ProfiledCallable(pluginName, delegate);
+        WrappedListenerInfo(HandlerList list, RegisteredListener original, RegisteredListener wrapped) {
+            this.list = list;
+            this.original = original;
+            this.wrapped = wrapped;
+        }
     }
 }

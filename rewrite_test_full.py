@@ -1,4 +1,6 @@
-package gg.pivot;
+import sys
+
+new_content = """package gg.pivot;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -79,3 +81,7 @@ public class TickProfilerTest {
         assertTrue((boolean) autoDisabledField.get(profiler), "autoDisabled must be true after shutdown");
     }
 }
+"""
+
+with open('src/test/java/gg/pivot/TickProfilerTest.java', 'w') as f:
+    f.write(new_content)
