@@ -23,7 +23,7 @@ import java.util.logging.Logger;
 /**
  * Handles automated performance profiling for plugins.
  * Supports hybrid mode: Paper Timings (v2) on Paper servers,
- * falling back to custom scheduler wrapping on Spigot.
+ * falling back to event listener wrapping on Spigot.
  */
 public class TickProfiler {
 
@@ -253,6 +253,7 @@ public class TickProfiler {
             p.addProperty("percentage_of_tick", Math.round(percentage * 1000.0) / 1000.0);
             p.addProperty("sample_count", sampleCount);
             p.addProperty("event_count", sampleCount);
+            p.addProperty("task_count", 0);
 
             pluginsArray.add(p);
         }
