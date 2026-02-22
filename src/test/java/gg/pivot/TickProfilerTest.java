@@ -104,7 +104,9 @@ public class TickProfilerTest {
             }
         }
         assertNotNull(pluginSampleClass, "PluginSample class not found");
-        java.lang.reflect.Constructor<?> constructor = pluginSampleClass.getDeclaredConstructor(); constructor.setAccessible(true); Object sample = constructor.newInstance();
+        java.lang.reflect.Constructor<?> constructor = pluginSampleClass.getDeclaredConstructor();
+        constructor.setAccessible(true);
+        Object sample = constructor.newInstance();
 
         java.lang.reflect.Method addMethod = pluginSampleClass.getDeclaredMethod("add", long.class);
         addMethod.setAccessible(true);
