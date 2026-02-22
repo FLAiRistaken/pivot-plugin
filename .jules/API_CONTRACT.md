@@ -824,7 +824,7 @@ X-API-Key: pvt_uP1JM4bRsoizE-sgBIlVu1458F9VKqmnwebxktAUHAQ
           "avg_tick_time_ms": 0.15,
           "max_tick_time_ms": 1.2,
           "total_time_ms": 540.0,
-          "percentage_of_tick": 0.025,
+          "percentage_of_tick": 0.9,
           "sample_count": 3600,
           "event_count": 0,
           "task_count": 3
@@ -871,7 +871,7 @@ X-API-Key: pvt_uP1JM4bRsoizE-sgBIlVu1458F9VKqmnwebxktAUHAQ
   - `avg_tick_time_ms` (float): Average execution time per task invocation (ms)
   - `max_tick_time_ms` (float): Worst-case single execution time (ms)
   - `total_time_ms` (float): Sum of all execution times in the window (ms)
-  - `percentage_of_tick` (float): Fraction of wall-clock window consumed (%)
+  - `percentage_of_tick` (float): Percentage of the profiling window's wall-clock time consumed by this plugin (0–100)
   - `sample_count` (int): Number of task invocations recorded
   - `event_count` (int): Event handlers counted (0 in Spigot mode)
   - `task_count` (int): Distinct Bukkit task IDs seen

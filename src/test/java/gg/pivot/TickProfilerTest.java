@@ -1,6 +1,5 @@
 package gg.pivot;
 
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -34,7 +33,7 @@ public class TickProfilerTest {
 
     @Test
     public void testAnonymizeIsDeterministicAndSHA256Based() throws Exception {
-        // Invoke the package-private static helper via reflection
+        // Invoke the private static helper via reflection
         java.lang.reflect.Method m = TickProfiler.class.getDeclaredMethod("anonymize", String.class);
         m.setAccessible(true);
 

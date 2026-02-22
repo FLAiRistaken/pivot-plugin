@@ -215,7 +215,7 @@ public class TickProfiler {
             byte[] hash = digest.digest(pluginName.getBytes(StandardCharsets.UTF_8));
             StringBuilder hex = new StringBuilder();
             for (int i = 0; i < 8; i++) {
-                hex.append(String.format("%02x", hash[i]));
+                hex.append(String.format("%02x", hash[i] & 0xff));
             }
             return "Plugin_" + hex;
         } catch (NoSuchAlgorithmException e) {
@@ -236,11 +236,19 @@ public class TickProfiler {
             String pluginName = entry.getKey();
             PluginSample sample = entry.getValue();
 
-            if (sample.sampleCount == 0) continue;
+            long totalTimeNano;
+            long maxTimeNano;
+            long sampleCount;
+            synchronized (sample) {
+                sampleCount = sample.sampleCount;
+                if (sampleCount == 0) continue;
+                totalTimeNano = sample.totalTimeNano;
+                maxTimeNano = sample.maxTimeNano;
+            }
 
-            double avgTickTimeMs = (sample.totalTimeNano / (double)sample.sampleCount) / 1_000_000.0;
-            double totalTimeMs = sample.totalTimeNano / 1_000_000.0;
-            double maxTimeMs = sample.maxTimeNano / 1_000_000.0;
+            double avgTickTimeMs = (totalTimeNano / (double) sampleCount) / 1_000_000.0;
+            double totalTimeMs = totalTimeNano / 1_000_000.0;
+            double maxTimeMs = maxTimeNano / 1_000_000.0;
             double percentage = (totalTimeMs / windowMillis) * 100.0;
 
             JsonObject p = new JsonObject();
@@ -250,7 +258,7 @@ public class TickProfiler {
             p.addProperty("max_tick_time_ms", Math.round(maxTimeMs * 100.0) / 100.0);
             p.addProperty("total_time_ms", Math.round(totalTimeMs * 100.0) / 100.0);
             p.addProperty("percentage_of_tick", Math.round(percentage * 1000.0) / 1000.0);
-            p.addProperty("sample_count", sample.sampleCount);
+            p.addProperty("sample_count", sampleCount);
             p.addProperty("event_count", 0); // Not tracked in Spigot mode
             p.addProperty("task_count", sample.taskIds.size());
 
