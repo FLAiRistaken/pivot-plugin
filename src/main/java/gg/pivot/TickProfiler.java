@@ -6,11 +6,9 @@ import org.bukkit.Bukkit;
 import org.bukkit.event.Event;
 import org.bukkit.event.EventException;
 import org.bukkit.event.HandlerList;
-import org.bukkit.event.Listener;
 import org.bukkit.plugin.EventExecutor;
 import org.bukkit.plugin.Plugin;
 import org.bukkit.plugin.RegisteredListener;
-import org.bukkit.scheduler.BukkitTask;
 
 import java.lang.reflect.Field;
 import java.nio.charset.StandardCharsets;
@@ -18,7 +16,6 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.logging.Logger;
@@ -55,7 +52,7 @@ public class TickProfiler {
     // Tracks the actual elapsed time between collectSample() calls
     private final AtomicLong lastSampleTimestampMs = new AtomicLong(System.currentTimeMillis());
 
-    // Saved scheduler field reference for restoring the original scheduler on shutdown
+    // Listener-wrapping profiling state is reverted on shutdown using wrappedListeners
 
     public TickProfiler(PivotPlugin plugin, ConfigManager configManager) {
         this.plugin = plugin;
@@ -65,7 +62,7 @@ public class TickProfiler {
         initialize();
     }
 
-        private void initialize() {
+    private void initialize() {
         if (!configManager.isProfilingEnabled()) {
             this.profilingEnabled = false;
             this.mode = "disabled";
@@ -101,8 +98,16 @@ public class TickProfiler {
         if (paperDetected && !configuredMode.equals("custom_only")) {
             this.mode = "paper_timings";
             this.isPaper = true;
-            this.profilingEnabled = true;
-            logger.info("TickProfiler initialised in paper_timings mode");
+            // TODO: Implement full Paper Timings v2 collection. For now, use the custom
+            // Spigot profiling backend even on Paper, since collectPaperSamples()
+            // currently delegates to collectSpigotSamples().
+            if (setupSpigotProfiling()) {
+                this.profilingEnabled = true;
+                logger.info("TickProfiler initialised in paper_timings mode (using custom_spigot backend)");
+            } else {
+                this.profilingEnabled = false;
+                this.mode = "disabled (profiling setup failed)";
+            }
         } else {
             this.mode = "custom_spigot";
             this.isPaper = false;
@@ -116,7 +121,7 @@ public class TickProfiler {
         }
     }
 
-        private boolean setupSpigotProfiling() {
+    private boolean setupSpigotProfiling() {
         try {
             wrappedListeners.clear();
             ArrayList<HandlerList> handlerLists = HandlerList.getHandlerLists();
@@ -248,13 +253,12 @@ public class TickProfiler {
             p.addProperty("percentage_of_tick", Math.round(percentage * 1000.0) / 1000.0);
             p.addProperty("sample_count", sampleCount);
             p.addProperty("event_count", sampleCount);
-            p.addProperty("task_count", 0);
 
             pluginsArray.add(p);
         }
     }
 
-    // --- Spigot Proxy ---
+    // --- Spigot Listener Profiling ---
 
     private void record(String pluginName, long durationNano) {
         long startOverhead = System.nanoTime();
@@ -267,11 +271,12 @@ public class TickProfiler {
     }
 
     /**
-     * Shuts down the profiler, restoring the original BukkitScheduler if a proxy
-     * was installed. Must be called from {@code onDisable()} and any config reload
-     * path to avoid leaving a stale proxy after the plugin is disabled.
+     * Shuts down the profiler, restoring any wrapped {@link RegisteredListener}s
+     * to their original, unwrapped state. Must be called from {@code onDisable()}
+     * and any config reload path to avoid leaving profiling listeners registered
+     * after the plugin is disabled.
      */
-        public synchronized void shutdown() {
+    public synchronized void shutdown() {
         profilingEnabled = false;
         autoDisabled = true;
 
@@ -283,15 +288,15 @@ public class TickProfiler {
         logger.info("TickProfiler: Restored original listeners");
     }
 
-        private static EventExecutor getExecutor(RegisteredListener listener) {
-            try {
-                Field executorField = RegisteredListener.class.getDeclaredField("executor");
-                executorField.setAccessible(true);
-                return (EventExecutor) executorField.get(listener);
-            } catch (Exception e) {
-                throw new RuntimeException("Failed to get executor from RegisteredListener", e);
-            }
+    private static EventExecutor getExecutor(RegisteredListener listener) {
+        try {
+            Field executorField = RegisteredListener.class.getDeclaredField("executor");
+            executorField.setAccessible(true);
+            return (EventExecutor) executorField.get(listener);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to get executor from RegisteredListener", e);
         }
+    }
 
 
     private class ProfiledRegisteredListener extends RegisteredListener {
@@ -299,7 +304,7 @@ public class TickProfiler {
         private final String pluginName;
         private final TickProfiler profiler;
 
-                public ProfiledRegisteredListener(RegisteredListener delegate, String pluginName, TickProfiler profiler) {
+        public ProfiledRegisteredListener(RegisteredListener delegate, String pluginName, TickProfiler profiler) {
             super(delegate.getListener(), getExecutor(delegate), delegate.getPriority(), delegate.getPlugin(), delegate.isIgnoringCancelled());
             this.delegate = delegate;
             this.pluginName = pluginName;
@@ -326,7 +331,6 @@ public class TickProfiler {
         long totalTimeNano = 0;
         long maxTimeNano = 0;
         long sampleCount = 0;
-        Set<Integer> taskIds = new CopyOnWriteArraySet<>();
 
         synchronized void add(long duration) {
             totalTimeNano += duration;
@@ -347,13 +351,11 @@ public class TickProfiler {
         final long totalTimeNano;
         final long maxTimeNano;
         final long sampleCount;
-        final Set<Integer> taskIds;
 
-        PluginSampleSnapshot(long totalTimeNano, long maxTimeNano, long sampleCount, Set<Integer> taskIds) {
+        PluginSampleSnapshot(long totalTimeNano, long maxTimeNano, long sampleCount) {
             this.totalTimeNano = totalTimeNano;
             this.maxTimeNano = maxTimeNano;
             this.sampleCount = sampleCount;
-            this.taskIds = Collections.unmodifiableSet(new HashSet<>(taskIds));
         }
     }
 
@@ -365,15 +367,13 @@ public class TickProfiler {
             long totalTimeNano;
             long maxTimeNano;
             long sampleCount;
-            Set<Integer> taskIds;
             synchronized (sample) {
                 totalTimeNano = sample.totalTimeNano;
                 maxTimeNano = sample.maxTimeNano;
                 sampleCount = sample.sampleCount;
-                taskIds = new HashSet<>(sample.taskIds);
             }
             snapshot.put(entry.getKey(),
-                    new PluginSampleSnapshot(totalTimeNano, maxTimeNano, sampleCount, taskIds));
+                    new PluginSampleSnapshot(totalTimeNano, maxTimeNano, sampleCount));
         }
         return Collections.unmodifiableMap(snapshot);
     }
