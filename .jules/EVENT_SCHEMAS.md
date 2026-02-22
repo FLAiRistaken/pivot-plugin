@@ -384,9 +384,18 @@ Triggered when the server shuts down gracefully.
 ```json
 {
   "timestamp": 1735398000000,
-  "event_type": "SERVER_STOP"
+  "event_type": "SERVER_STOP",
+  "reason": "manual"
 }
 ```
+
+#### Fields
+
+| Field | Type | Required | Description | Example |
+|-------|------|----------|-------------|---------|
+| `timestamp` | integer | Yes | When the event occurred | `1735398000000` |
+| `event_type` | string | Yes | Always `"SERVER_STOP"` | `"SERVER_STOP"` |
+| `reason` | string | No | Reason for the stop | `"manual"` |
 
 ## Performance Events
 

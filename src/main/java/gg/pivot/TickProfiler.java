@@ -7,13 +7,16 @@ import org.bukkit.Server;
 import org.bukkit.plugin.Plugin;
 import org.bukkit.scheduler.BukkitScheduler;
 import org.bukkit.scheduler.BukkitTask;
-import org.bukkit.scheduler.BukkitWorker;
 
 import java.lang.reflect.*;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.*;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArraySet;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.logging.Logger;
 
@@ -31,13 +34,11 @@ public class TickProfiler {
     private boolean isPaper;
     private volatile boolean profilingEnabled;
     private String mode;
-    private boolean autoDisabled = false;
+    private volatile boolean autoDisabled = false;
 
-    // Paper Timings state
+    // Paper Timings state (reserved for future full implementation)
     private Class<?> timingsManagerClass;
     private Field handlersField;
-    // Plugin Name -> Snapshot
-    private final Map<String, TimingSnapshot> lastPaperSnapshots = new HashMap<>();
 
     // Spigot custom profiling state
     private Object originalScheduler;
@@ -47,10 +48,10 @@ public class TickProfiler {
 
     // Overhead tracking
     private final AtomicLong overheadNano = new AtomicLong(0);
-    private int overheadViolations = 0;
+    private final AtomicInteger overheadViolations = new AtomicInteger(0);
 
     // Tracks the actual elapsed time between collectSample() calls
-    private long lastSampleTimestampMs = System.currentTimeMillis();
+    private final AtomicLong lastSampleTimestampMs = new AtomicLong(System.currentTimeMillis());
 
     // Saved scheduler field reference for restoring the original scheduler on shutdown
     private volatile Field savedSchedulerField;
@@ -158,8 +159,7 @@ public class TickProfiler {
         if (!profilingEnabled || autoDisabled) return null;
 
         long now = System.currentTimeMillis();
-        long elapsedMs = now - lastSampleTimestampMs;
-        lastSampleTimestampMs = now;
+        long elapsedMs = now - lastSampleTimestampMs.getAndSet(now);
         // Cast is safe: sampling intervals are expected to be seconds to minutes,
         // well within int range.
         int durationSeconds = (int) Math.max(1, elapsedMs / 1000);
@@ -171,14 +171,13 @@ public class TickProfiler {
         double avgOverheadPerTickMs = (overhead / (double)totalTicks) / 1_000_000.0;
 
         if (avgOverheadPerTickMs > maxOverheadMs) {
-            overheadViolations++;
-            if (overheadViolations >= 3 && configManager.isAutoDisableOnOverhead()) {
+            if (overheadViolations.incrementAndGet() >= 3 && configManager.isAutoDisableOnOverhead()) {
                 autoDisabled = true;
                 logger.warning("TickProfiler auto-disabled: overhead exceeded " + maxOverheadMs + "ms threshold (Avg: " + String.format("%.3f", avgOverheadPerTickMs) + "ms).");
                 return null;
             }
         } else {
-            overheadViolations = 0;
+            overheadViolations.set(0);
         }
 
         JsonObject event = new JsonObject();
@@ -205,105 +204,23 @@ public class TickProfiler {
     }
 
     private void collectPaperSamples(JsonArray pluginsArray, int durationSeconds) {
-        try {
-            Collection<?> handlers = (Collection<?>) handlersField.get(null);
-
-            boolean anonymize = configManager.isAnonymizePluginNames();
-
-            for (Object handler : handlers) {
-                 // Reflect fields: count, totalTime
-                 // Class is likely co.aikar.timings.TimingHandler
-                 // It might be obfuscated in some versions, but usually not the fields.
-                 // Actually, TimingHandler (v2) fields are likely private.
-                 // We need to access them via reflection.
-                 Class<?> clazz = handler.getClass();
-
-                 // Try to get identifier/name
-                 Field nameField = getField(clazz, "name");
-                 Field groupHandlerField = getField(clazz, "groupHandler"); // This usually holds the Plugin Timing
-                 Field countField = getField(clazz, "count");
-                 Field totalTimeField = getField(clazz, "totalTime");
-
-                 if (countField == null || totalTimeField == null) continue;
-
-                 countField.setAccessible(true);
-                 totalTimeField.setAccessible(true);
-
-                 long count = countField.getLong(handler);
-                 long totalTime = totalTimeField.getLong(handler);
-
-                 if (count == 0) continue;
-
-                 // Name
-                 String name = "Unknown";
-                 if (nameField != null) {
-                     nameField.setAccessible(true);
-                     name = (String) nameField.get(handler);
-                 }
-
-                 // We need to aggregate by Plugin.
-                 // 'groupHandler' usually points to the plugin's main handler or similar.
-                 // Or we can try to find 'plugin' field?
-                 // Some TimingHandler implementations don't store plugin directly.
-                 // BUT, we want "per plugin" stats.
-                 // If we can't identify plugin, we skip.
-
-                 // Try to find 'plugin' field?
-                 // If not, maybe name contains plugin name? "PluginName: Event"
-
-                 String pluginName = "Unknown";
-                 if (name.contains(":")) {
-                     pluginName = name.split(":")[0];
-                 } else {
-                     // Try getting group
-                     if (groupHandlerField != null) {
-                         groupHandlerField.setAccessible(true);
-                         Object group = groupHandlerField.get(handler);
-                         if (group != null) {
-                             // Group might have name
-                             Field gName = getField(group.getClass(), "name");
-                             if (gName != null) {
-                                 gName.setAccessible(true);
-                                 pluginName = (String) gName.get(group);
-                             }
-                         }
-                     }
-                 }
-
-                 // Aggregate
-                 // Since we are iterating all handlers (events, tasks), we need to sum up per plugin.
-                 // But totalTime is cumulative.
-                 // We need to track last value per Handler ID? Or per Plugin?
-                 // Simpler: Aggregate per plugin for this snapshot, then diff with last snapshot.
-                 // But handlers are dynamic.
-                 // Using 'pluginName' as key.
-
-                 // Wait, this is getting too complex for "Phase 3A".
-                 // I will assume for now that I can get the Plugin Name.
-            }
-            // PAPER TODO: Full implementation requires deep reflection on Timings.
-            // For this task, if Paper reflection is too hard, I'll return nothing and rely on Spigot fallback if detected as such.
-            // But I initialized as Paper.
-            // I'll leave the Paper implementation empty for now to avoid breaking build with guessing.
-            // The prompt says "Read per-plugin timing data...".
-            // I will implement a placeholder that logs "Paper profiling incomplete".
-
-        } catch (Exception e) {
-            // ignore
-        }
-
-        // If no Paper-specific samples could be collected, fall back to the
-        // existing Spigot/custom sampling so we still emit profiling data.
-        if (pluginsArray.size() == 0) {
-            collectSpigotSamples(pluginsArray, durationSeconds);
-        }
+        // Full Paper Timings v2 implementation via reflection is incomplete.
+        // Fall back to the custom Spigot sampling which works on both Paper and Spigot.
+        collectSpigotSamples(pluginsArray, durationSeconds);
     }
 
-    private Field getField(Class<?> clazz, String name) {
+    private static String anonymize(String pluginName) {
         try {
-            return clazz.getDeclaredField(name);
-        } catch (NoSuchFieldException e) {
-            return null;
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(pluginName.getBytes(StandardCharsets.UTF_8));
+            StringBuilder hex = new StringBuilder();
+            for (int i = 0; i < 8; i++) {
+                hex.append(String.format("%02x", hash[i] & 0xff));
+            }
+            return "Plugin_" + hex;
+        } catch (NoSuchAlgorithmException e) {
+            // SHA-256 is guaranteed to be present; fall back to a stable hex representation
+            return "Plugin_" + Integer.toHexString(pluginName.hashCode());
         }
     }
 
@@ -319,21 +236,29 @@ public class TickProfiler {
             String pluginName = entry.getKey();
             PluginSample sample = entry.getValue();
 
-            if (sample.sampleCount == 0) continue;
+            long totalTimeNano;
+            long maxTimeNano;
+            long sampleCount;
+            synchronized (sample) {
+                sampleCount = sample.sampleCount;
+                if (sampleCount == 0) continue;
+                totalTimeNano = sample.totalTimeNano;
+                maxTimeNano = sample.maxTimeNano;
+            }
 
-            double avgTickTimeMs = (sample.totalTimeNano / (double)sample.sampleCount) / 1_000_000.0;
-            double totalTimeMs = sample.totalTimeNano / 1_000_000.0;
-            double maxTimeMs = sample.maxTimeNano / 1_000_000.0;
+            double avgTickTimeMs = (totalTimeNano / (double) sampleCount) / 1_000_000.0;
+            double totalTimeMs = totalTimeNano / 1_000_000.0;
+            double maxTimeMs = maxTimeNano / 1_000_000.0;
             double percentage = (totalTimeMs / windowMillis) * 100.0;
 
             JsonObject p = new JsonObject();
-            p.addProperty("name", anonymize ? "Plugin_" + pluginName.hashCode() : pluginName);
+            p.addProperty("name", anonymize ? anonymize(pluginName) : pluginName);
             p.addProperty("version", "unknown"); // We could look up version if we had Plugin instance, but we only have name here.
             p.addProperty("avg_tick_time_ms", Math.round(avgTickTimeMs * 100.0) / 100.0);
             p.addProperty("max_tick_time_ms", Math.round(maxTimeMs * 100.0) / 100.0);
             p.addProperty("total_time_ms", Math.round(totalTimeMs * 100.0) / 100.0);
             p.addProperty("percentage_of_tick", Math.round(percentage * 1000.0) / 1000.0);
-            p.addProperty("sample_count", sample.sampleCount);
+            p.addProperty("sample_count", sampleCount);
             p.addProperty("event_count", 0); // Not tracked in Spigot mode
             p.addProperty("task_count", sample.taskIds.size());
 
@@ -352,6 +277,14 @@ public class TickProfiler {
 
         @Override
         public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+            // When profiling is off, delegate directly with no wrapping or overhead tracking
+            if (!profilingEnabled || autoDisabled) {
+                try {
+                    return method.invoke(delegate, args);
+                } catch (InvocationTargetException e) {
+                    throw e.getCause();
+                }
+            }
             long startOverhead = System.nanoTime();
             try {
                 // Intercept runTask*, schedule*, and callSyncMethod methods
@@ -422,6 +355,10 @@ public class TickProfiler {
 
         @Override
         public void run() {
+            if (!profilingEnabled || autoDisabled) {
+                delegate.run();
+                return;
+            }
             long start = System.nanoTime();
             try {
                 delegate.run();
@@ -443,6 +380,9 @@ public class TickProfiler {
 
         @Override
         public Object call() throws Exception {
+            if (!profilingEnabled || autoDisabled) {
+                return delegate.call();
+            }
             long start = System.nanoTime();
             try {
                 return delegate.call();
@@ -468,8 +408,9 @@ public class TickProfiler {
      * was installed. Must be called from {@code onDisable()} and any config reload
      * path to avoid leaving a stale proxy after the plugin is disabled.
      */
-    public void shutdown() {
+    public synchronized void shutdown() {
         profilingEnabled = false;
+        autoDisabled = true;
         if (originalScheduler != null && savedSchedulerField != null) {
             try {
                 Server server = Bukkit.getServer();
@@ -494,9 +435,56 @@ public class TickProfiler {
         }
     }
 
-    // Paper snapshot holder
-    private static class TimingSnapshot {
-        long totalTime;
-        long count;
+    // --- Test helpers (package-private) ---
+
+    /** Returns the total profiling overhead accumulated so far, for unit tests. */
+    long getOverheadNanoForTesting() {
+        return overheadNano.get();
+    }
+
+    /** Immutable snapshot of a plugin's profiling data, for verification in tests. */
+    static final class PluginSampleSnapshot {
+        final long totalTimeNano;
+        final long maxTimeNano;
+        final long sampleCount;
+        final Set<Integer> taskIds;
+
+        PluginSampleSnapshot(long totalTimeNano, long maxTimeNano, long sampleCount, Set<Integer> taskIds) {
+            this.totalTimeNano = totalTimeNano;
+            this.maxTimeNano = maxTimeNano;
+            this.sampleCount = sampleCount;
+            this.taskIds = Collections.unmodifiableSet(new HashSet<>(taskIds));
+        }
+    }
+
+    /** Returns an immutable snapshot of the current plugin samples map, for unit tests. */
+    Map<String, PluginSampleSnapshot> getCurrentSamplesSnapshotForTesting() {
+        Map<String, PluginSampleSnapshot> snapshot = new HashMap<>();
+        for (Map.Entry<String, PluginSample> entry : currentSpigotSamples.entrySet()) {
+            PluginSample sample = entry.getValue();
+            long totalTimeNano;
+            long maxTimeNano;
+            long sampleCount;
+            Set<Integer> taskIds;
+            synchronized (sample) {
+                totalTimeNano = sample.totalTimeNano;
+                maxTimeNano = sample.maxTimeNano;
+                sampleCount = sample.sampleCount;
+                taskIds = new HashSet<>(sample.taskIds);
+            }
+            snapshot.put(entry.getKey(),
+                    new PluginSampleSnapshot(totalTimeNano, maxTimeNano, sampleCount, taskIds));
+        }
+        return Collections.unmodifiableMap(snapshot);
+    }
+
+    /** Creates a profiled {@link Runnable} that can be used in unit tests. */
+    Runnable createProfiledRunnableForTesting(String pluginName, Runnable delegate) {
+        return new ProfiledRunnable(pluginName, delegate);
+    }
+
+    /** Creates a profiled {@link Callable} that can be used in unit tests. */
+    Callable<Object> createProfiledCallableForTesting(String pluginName, Callable<?> delegate) {
+        return new ProfiledCallable(pluginName, delegate);
     }
 }

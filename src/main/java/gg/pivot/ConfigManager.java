@@ -27,26 +27,6 @@ public class ConfigManager {
         return getConfig().getString("profiling.mode", "auto");
     }
 
-    public int getSamplingDurationSeconds() {
-        return getConfig().getInt("profiling.sampling.duration_seconds", 30);
-    }
-
-    public int getSamplingIntervalMinutes() {
-        return getConfig().getInt("profiling.sampling.interval_minutes", 5);
-    }
-
-    public boolean isAutoProfileOnLag() {
-        return getConfig().getBoolean("profiling.triggers.auto_profile_on_lag", true);
-    }
-
-    public double getLagThresholdTps() {
-        return getConfig().getDouble("profiling.triggers.lag_threshold_tps", 18.0);
-    }
-
-    public boolean isShareAnonymousData() {
-        return getConfig().getBoolean("profiling.privacy.share_anonymous_data", true);
-    }
-
     public boolean isAnonymizePluginNames() {
         return getConfig().getBoolean("profiling.privacy.anonymize_plugin_names", false);
     }

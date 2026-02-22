@@ -807,6 +807,30 @@ X-API-Key: pvt_uP1JM4bRsoizE-sgBIlVu1458F9VKqmnwebxktAUHAQ
       "timestamp": 1735398000000,
       "event_type": "SERVER_START"
     }
+  ],
+  "tick_profile_events": [
+    {
+      "event_type": "TICK_PROFILE",
+      "timestamp": 1735398000000,
+      "sample_duration_seconds": 60,
+      "server_tps": 19.8,
+      "server_version": "git-Paper-1.20.1",
+      "total_plugins": 12,
+      "profiling_mode": "custom_spigot",
+      "plugins": [
+        {
+          "name": "ExamplePlugin",
+          "version": "unknown",
+          "avg_tick_time_ms": 0.15,
+          "max_tick_time_ms": 1.2,
+          "total_time_ms": 540.0,
+          "percentage_of_tick": 0.9,
+          "sample_count": 3600,
+          "event_count": 0,
+          "task_count": 3
+        }
+      ]
+    }
   ]
 }
 ```
@@ -826,11 +850,31 @@ X-API-Key: pvt_uP1JM4bRsoizE-sgBIlVu1458F9VKqmnwebxktAUHAQ
 **ServerEvent:**
 - `timestamp` (int): Unix timestamp in milliseconds
 - `event_type` (string): `"SERVER_START"` or `"SERVER_STOP"`
+- `reason` (string, optional): Shutdown reason, present on `SERVER_STOP` (e.g. `"manual"`)
 
 **PerformanceEvent:**
 - `timestamp` (int): Unix timestamp in milliseconds
 - `tps` (float): Server TPS (ticks per second), 0-20
 - `player_count` (int): Online player count at sample time
+
+**TickProfileEvent:**
+- `event_type` (string): Always `"TICK_PROFILE"`
+- `timestamp` (int): Unix timestamp in milliseconds
+- `sample_duration_seconds` (int): How many seconds the sample covers
+- `server_tps` (float): Server TPS at time of collection
+- `server_version` (string): Server version string
+- `total_plugins` (int): Number of plugins loaded
+- `profiling_mode` (string): One of `paper_timings`, `custom_spigot`, or `disabled (…)`
+- `plugins` (array): Per-plugin timing breakdown; each entry contains:
+  - `name` (string): Plugin name (or opaque SHA-256 prefix when anonymised)
+  - `version` (string): Plugin version (may be `"unknown"`)
+  - `avg_tick_time_ms` (float): Average execution time per task invocation (ms)
+  - `max_tick_time_ms` (float): Worst-case single execution time (ms)
+  - `total_time_ms` (float): Sum of all execution times in the window (ms)
+  - `percentage_of_tick` (float): Percentage of the profiling window's wall-clock time consumed by this plugin (0–100)
+  - `sample_count` (int): Number of task invocations recorded
+  - `event_count` (int): Event handlers counted (0 in Spigot mode)
+  - `task_count` (int): Distinct Bukkit task IDs seen
 
 **Timestamp Validation:**
 - Must be positive integer
