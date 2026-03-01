@@ -46,6 +46,15 @@ public class EventCollector {
     private final Queue<JsonObject> performanceEvents = new ConcurrentLinkedQueue<>();
     private final Queue<JsonObject> serverEvents = new ConcurrentLinkedQueue<>();
 
+    // ⚡ Bolt Optimization: Reuse MessageDigest to prevent object instantiation overhead during async flush
+    private static final ThreadLocal<MessageDigest> SHA256_DIGEST = ThreadLocal.withInitial(() -> {
+        try {
+            return MessageDigest.getInstance("SHA-256");
+        } catch (NoSuchAlgorithmException e) {
+            throw new RuntimeException("SHA-256 not available!", e);
+        }
+    });
+
     /**
      * Initializes the EventCollector.
      * <p>
@@ -145,7 +154,7 @@ public class EventCollector {
      */
     private String hashUuid(String uuid) {
         try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            MessageDigest digest = SHA256_DIGEST.get();
             byte[] hash = digest.digest(uuid.getBytes(StandardCharsets.UTF_8));
 
             // Convert bytes to hex string
@@ -158,9 +167,8 @@ public class EventCollector {
                 hexString.append(hex);
             }
             return hexString.toString();
-        } catch (NoSuchAlgorithmException e) {
-            // SHA-256 should always be available
-            logger.severe("SHA-256 not available! Anonymization failed.");
+        } catch (Exception e) {
+            logger.severe("SHA-256 hashing failed: " + e.getMessage());
             return null;
         }
     }
