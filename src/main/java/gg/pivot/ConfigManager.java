@@ -46,8 +46,8 @@ public class ConfigManager {
      *   <li>{@code auto} - Use Paper Timings if available, otherwise Spigot custom profiling.</li>
      *   <li>{@code paper_only} - Only use Paper Timings (disables on Spigot).</li>
      *   <li>{@code custom_only} - Force custom Spigot profiling even on Paper.</li>
-     *   <li>{@code disabled} - Disable profiling.</li>
      * </ul>
+     * To disable profiling entirely, set {@code profiling.enabled: false} in config.
      * </p>
      *
      * @return The profiling mode string (default: "auto").

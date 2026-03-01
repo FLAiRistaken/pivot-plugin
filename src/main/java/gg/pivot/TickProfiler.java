@@ -71,9 +71,12 @@ public class TickProfiler {
     /**
      * Initializes profiling based on configuration and server type.
      * <p>
-     * Detects if the server is running Paper. If so, attempts to use Paper Timings.
+     * Detects whether the server is running Paper by probing for Timings v2 classes.
+     * When Paper is detected and {@code paper_timings} mode is active, profiling still
+     * uses the custom listener-wrapping backend ({@code custom_spigot}) because the
+     * full Paper Timings v2 collector is not yet implemented.
      * Falls back to custom Spigot profiling (listener wrapping) if Paper is not detected
-     * or if explicitly configured.
+     * or if {@code custom_only} is configured.
      * </p>
      */
     private void initialize() {
