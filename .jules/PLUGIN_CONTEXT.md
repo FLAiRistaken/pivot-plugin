@@ -352,6 +352,17 @@ boolean profilingEnabled = config.isProfilingEnabled();
   - Direct queue draining to JsonArray (avoids intermediate allocations)
   - Lazy TPS calculation and cached server instances
 
+### Batching Pattern
+The plugin minimizes network and CPU impact by batching events over a configured interval (`collection.batch-interval`, default 60s).
+- **Queuing:** Events (player, server, performance) are instantly added to concurrent queues off the main thread.
+- **Flushing:** A background async task calls `EventCollector.flush()` which safely drains the queues. Data is drained directly into Gson `JsonArray`s to avoid intermediate list allocations.
+- **Anonymization:** Expensive operations like UUID hashing via SHA-256 are performed during the async flush, explicitly avoiding any lag on the main server thread.
+
+### Profiling Integration
+The plugin's analytics includes server profiling. The `TickProfiler` actively measures how much time each plugin takes during a server tick using hybrid modes (Paper Timings or listener wrapping).
+- When the asynchronous `EventCollector.flush()` occurs, the collector gathers the current profile sample via `TickProfiler.collectSample()` and appends the `TICK_PROFILE` event to the batch payload.
+- A `TickProfiler` instance is provided to the collector via `setTickProfiler()` during initialization.
+
 ### TPS Detection
 **3 methods in priority order:**
 1. **Paper API** (`Server.getTPS()`) - Native, most accurate

@@ -74,6 +74,11 @@ public class EventCollector {
                 .build();
     }
 
+    /**
+     * Sets the tick profiler instance to be used for collecting plugin performance metrics.
+     *
+     * @param tickProfiler The profiler instance.
+     */
     public void setTickProfiler(TickProfiler tickProfiler) {
         this.tickProfiler = tickProfiler;
     }
@@ -247,6 +252,14 @@ public class EventCollector {
         if (debugEnabled) {
             logger.info("Flush called - checking for events to send");
         }
+
+        /*
+         * Batching Pattern Logic:
+         * 1. This flush() method is executed periodically by an asynchronous task.
+         * 2. It drains events from concurrent queues directly into Gson JsonArrays.
+         * 3. Costly operations such as UUID hashing are deferred until this point, running off the main thread.
+         * 4. The arrays are consolidated into a single JSON payload to minimize API calls and network overhead.
+         */
 
         // Collect Tick Profile
         JsonObject tickProfileEvent = null;
