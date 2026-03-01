@@ -48,12 +48,12 @@ privacy:
 
 profiling:
   enabled: true
-  mode: auto                  # auto | paper_only | custom_only | disabled
+  mode: auto                  # auto | paper_only | custom_only
   privacy:
     anonymize_plugin_names: false # Hash plugin names in reports
   performance:
-    max_overhead_ms: 0.2          # Disable if profiling itself uses >0.2ms/tick
-    auto_disable_on_overhead: true
+    max_overhead_ms: 0.2          # Threshold for profiler overhead in ms/tick (used for auto-disable)
+    auto_disable_on_overhead: true # When true, disable profiling after 3 consecutive overhead violations above the threshold
 
 debug:
   enabled: false              # Enable verbose logging

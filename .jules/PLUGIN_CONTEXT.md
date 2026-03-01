@@ -231,19 +231,18 @@ See `../docs/EVENT_SCHEMAS.md` for full specification.
 The `TickProfiler` implements a hybrid strategy to measure plugin performance impact without heavy external dependencies.
 
 1.  **Paper Mode (`paper_timings`)**:
-    *   Used automatically on Paper servers.
-    *   Leverages the native Timings v2 API (`co.aikar.timings.TimingsManager`) for accurate, low-overhead data.
-    *   *Note: Currently falls back to Spigot implementation while reflection bindings are finalized.*
+    *   Detects the presence of Timings v2 classes (e.g. `co.aikar.timings.TimingsManager`) for environment awareness only.
+    *   Currently delegates sampling to the same custom listener-wrapping implementation as **Spigot Mode** (Paper sampling still uses the `custom_spigot` path).
 
 2.  **Spigot Mode (`custom_spigot`)**:
     *   Used on Spigot/CraftBukkit servers or when configured as `custom_only`.
     *   Wraps every `RegisteredListener` with a `ProfiledRegisteredListener`.
     *   Measures execution time of event handlers using `System.nanoTime()`.
-    *   **Overhead Protection:** Automatically disables profiling if internal overhead exceeds `0.2ms` per tick (configurable).
+    *   **Overhead Protection:** When `profiling.performance.auto_disable_on_overhead` is enabled, automatically disables profiling after 3 consecutive ticks where internal profiling overhead exceeds `0.2ms` per tick (threshold configurable).
 
 3.  **Configuration**:
     *   Controlled via `profiling` section in `config.yml`.
-    *   Supports `auto`, `paper_only`, `custom_only`, and `disabled` modes.
+    *   Supports `auto`, `paper_only`, and `custom_only` modes. To disable profiling entirely, set `profiling.enabled: false`.
 
 ---
 
