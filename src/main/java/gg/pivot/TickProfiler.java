@@ -229,15 +229,15 @@ public class TickProfiler {
             String pluginName = entry.getKey();
             PluginSample sample = entry.getValue();
 
-            long totalTimeNano;
-            long maxTimeNano;
-            long sampleCount;
-            synchronized (sample) {
-                sampleCount = sample.sampleCount;
-                if (sampleCount == 0) continue;
-                totalTimeNano = sample.totalTimeNano;
-                maxTimeNano = sample.maxTimeNano;
+            long sampleCount = sample.sampleCount.get();
+            long totalTimeNano = sample.totalTimeNano.get();
+            // Handle race where total/max are updated before sampleCount:
+            // if we see sampleCount == 0 but totals are non-zero, re-read once.
+            if (sampleCount == 0 && totalTimeNano != 0L) {
+                sampleCount = sample.sampleCount.get();
             }
+            if (sampleCount == 0) continue;
+            long maxTimeNano = sample.maxTimeNano.get();
 
             double avgTickTimeMs = (totalTimeNano / (double) sampleCount) / 1_000_000.0;
             double totalTimeMs = totalTimeNano / 1_000_000.0;
@@ -329,14 +329,14 @@ public class TickProfiler {
     }
 
     private static class PluginSample {
-        long totalTimeNano = 0;
-        long maxTimeNano = 0;
-        long sampleCount = 0;
+        final AtomicLong totalTimeNano = new AtomicLong(0);
+        final AtomicLong maxTimeNano = new AtomicLong(0);
+        final AtomicLong sampleCount = new AtomicLong(0);
 
-        synchronized void add(long duration) {
-            totalTimeNano += duration;
-            if (duration > maxTimeNano) maxTimeNano = duration;
-            sampleCount++;
+        void add(long duration) {
+            totalTimeNano.addAndGet(duration);
+            maxTimeNano.accumulateAndGet(duration, Math::max);
+            sampleCount.incrementAndGet();
         }
     }
 
@@ -365,16 +365,8 @@ public class TickProfiler {
         Map<String, PluginSampleSnapshot> snapshot = new HashMap<>();
         for (Map.Entry<String, PluginSample> entry : currentSpigotSamples.entrySet()) {
             PluginSample sample = entry.getValue();
-            long totalTimeNano;
-            long maxTimeNano;
-            long sampleCount;
-            synchronized (sample) {
-                totalTimeNano = sample.totalTimeNano;
-                maxTimeNano = sample.maxTimeNano;
-                sampleCount = sample.sampleCount;
-            }
             snapshot.put(entry.getKey(),
-                    new PluginSampleSnapshot(totalTimeNano, maxTimeNano, sampleCount));
+                    new PluginSampleSnapshot(sample.totalTimeNano.get(), sample.maxTimeNano.get(), sample.sampleCount.get()));
         }
         return Collections.unmodifiableMap(snapshot);
     }
