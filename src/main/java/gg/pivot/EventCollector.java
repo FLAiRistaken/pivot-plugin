@@ -39,7 +39,9 @@ public class EventCollector {
     private volatile String apiKey;
 
     // Added for Phase 3A
-    private TickProfiler tickProfiler;
+    // volatile ensures cross-thread visibility: setTickProfiler() may be called from the main thread
+    // while flush() runs on an async task thread.
+    private volatile TickProfiler tickProfiler;
 
     // ⚡ Bolt Optimization: Use ConcurrentLinkedQueue to avoid blocking main thread with locks
     private final Queue<PlayerEventData> playerEvents = new ConcurrentLinkedQueue<>();
@@ -255,9 +257,13 @@ public class EventCollector {
 
         /*
          * Batching Pattern Logic:
-         * 1. This flush() method is executed periodically by an asynchronous task.
+         * 1. This flush() method is called periodically by an async background task during normal
+         *    operation, but it may also be invoked synchronously on the main thread during
+         *    PivotPlugin.onDisable() for a final drain on shutdown.
          * 2. It drains events from concurrent queues directly into Gson JsonArrays.
-         * 3. Costly operations such as UUID hashing are deferred until this point, running off the main thread.
+         * 3. Costly operations such as UUID hashing are performed here; during the normal
+         *    async flush path these run off the main thread, but during the onDisable() path
+         *    they may run on the main thread.
          * 4. The arrays are consolidated into a single JSON payload to minimize API calls and network overhead.
          */
 
