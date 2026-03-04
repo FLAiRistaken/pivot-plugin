@@ -11,6 +11,8 @@ import java.lang.reflect.Method;
 import java.util.logging.Logger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -124,5 +126,34 @@ public class EventCollectorTest {
         verify(mockProfiler).collectSample();
         // Verify the early-return was NOT taken (the "No events to send" log must NOT appear)
         verify(mockLogger, never()).info("No events to send");
+    }
+
+    @Test
+    public void testHashUuidIsDeterministicAndReusesThreadLocal() throws Exception {
+        when(plugin.getConfig()).thenReturn(config);
+        when(plugin.getApiKey()).thenCallRealMethod();
+        when(config.getString("api.key")).thenReturn("pvt_validkey1234567890");
+        when(plugin.getLogger()).thenReturn(Logger.getGlobal());
+
+        EventCollector collector = new EventCollector(plugin);
+
+        Method hashUuidMethod = EventCollector.class.getDeclaredMethod("hashUuid", String.class);
+        hashUuidMethod.setAccessible(true);
+
+        String uuid = "550e8400-e29b-41d4-a716-446655440000";
+        String result1 = (String) hashUuidMethod.invoke(collector, uuid);
+        String result2 = (String) hashUuidMethod.invoke(collector, uuid);
+
+        // Must be non-null and exactly 64 hex characters (SHA-256 output)
+        assertNotNull(result1, "hashUuid must return a non-null result");
+        assertEquals(64, result1.length(), "SHA-256 hash must be 64 hex characters");
+
+        // Deterministic: same UUID must always produce the same hash (validates ThreadLocal reuse + digest reset)
+        assertEquals(result1, result2, "hashUuid must be deterministic for the same input");
+
+        // Different UUIDs must produce different hashes
+        String otherUuid = "00000000-0000-0000-0000-000000000001";
+        String result3 = (String) hashUuidMethod.invoke(collector, otherUuid);
+        assertNotEquals(result1, result3, "hashUuid must distinguish different UUIDs");
     }
 }

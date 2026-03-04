@@ -153,24 +153,19 @@ public class EventCollector {
      * @return Hashed UUID (64 hex characters)
      */
     private String hashUuid(String uuid) {
-        try {
-            MessageDigest digest = SHA256_DIGEST.get();
-            byte[] hash = digest.digest(uuid.getBytes(StandardCharsets.UTF_8));
+        MessageDigest digest = SHA256_DIGEST.get();
+        byte[] hash = digest.digest(uuid.getBytes(StandardCharsets.UTF_8));
 
-            // Convert bytes to hex string
-            StringBuilder hexString = new StringBuilder();
-            for (byte b : hash) {
-                String hex = Integer.toHexString(0xff & b);
-                if (hex.length() == 1) {
-                    hexString.append('0');
-                }
-                hexString.append(hex);
+        // Convert bytes to hex string
+        StringBuilder hexString = new StringBuilder();
+        for (byte b : hash) {
+            String hex = Integer.toHexString(0xff & b);
+            if (hex.length() == 1) {
+                hexString.append('0');
             }
-            return hexString.toString();
-        } catch (Exception e) {
-            logger.severe("SHA-256 hashing failed: " + e.getMessage());
-            return null;
+            hexString.append(hex);
         }
+        return hexString.toString();
     }
 
     /**
