@@ -57,8 +57,16 @@ debug:
   log-batches: false
 
 profiling:
+  # Enable/disable plugin performance profiling
   enabled: true
-  mode: auto  # auto | paper_only | custom_only | disabled
+
+  # Profiling mode
+  # auto: Uses Paper Timings if available, otherwise Spigot custom profiling
+  # paper_only: Only uses Paper Timings (disables on Spigot)
+  # custom_only: Forces custom Spigot profiling even on Paper
+  # disabled: Disables profiling
+  mode: auto
+
   # NOTE: The sampling, triggers and privacy.share_anonymous_data options below
   # are not yet implemented and have no effect on current behavior.
   # They are placeholders for future releases and may change.
@@ -68,9 +76,14 @@ profiling:
   triggers:
     auto_profile_on_lag: true
     lag_threshold_tps: 18.0
+
   privacy:
     share_anonymous_data: true
+    # Hash plugin names in reports
     anonymize_plugin_names: false
+
   performance:
+    # Threshold for profiler overhead in ms/tick (used for auto-disable)
     max_overhead_ms: 0.2
+    # When true, disable profiling after 3 consecutive overhead violations above the threshold
     auto_disable_on_overhead: true

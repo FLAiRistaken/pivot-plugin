@@ -133,6 +133,21 @@ new BukkitRunnable() {
 httpClient.newCall(request).execute(); // Synchronous!
 ```
 
+### Scheduling Pattern
+For dynamic intervals (e.g., varying TPS sample intervals), use recursive scheduling instead of a fixed timer:
+```java
+private void scheduleNextTask(long delayTicks) {
+    new BukkitRunnable() {
+        @Override
+        public void run() {
+            // Task logic here
+            long nextDelay = calculateDynamicDelay();
+            scheduleNextTask(nextDelay);
+        }
+    }.runTaskLaterAsynchronously(plugin, delayTicks);
+}
+```
+
 ### Retry Logic (Future Enhancement)
 - Exponential backoff: 5s → 10s → 20s → 40s
 - Max 5 retries per batch
@@ -239,6 +254,7 @@ The `TickProfiler` implements a hybrid strategy to measure plugin performance im
     *   Wraps every `RegisteredListener` with a `ProfiledRegisteredListener`.
     *   Measures execution time of event handlers using `System.nanoTime()`.
     *   **Overhead Protection:** When `profiling.performance.auto_disable_on_overhead` is enabled, automatically disables profiling after 3 consecutive ticks where internal profiling overhead exceeds `0.2ms` per tick (threshold configurable).
+    *   **Lock-Free Updates:** Uses `AtomicLong` for storing plugin performance metrics (`totalTimeNano`, `maxTimeNano`, `sampleCount`) to allow lock-free updates and reads without blocking the main thread.
 
 3.  **Configuration**:
     *   Controlled via `profiling` section in `config.yml`.
