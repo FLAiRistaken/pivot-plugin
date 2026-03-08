@@ -43,8 +43,8 @@ public class EventCollector {
 
     // ⚡ Bolt Optimization: Use ConcurrentLinkedQueue to avoid blocking main thread with locks
     private final Queue<PlayerEventData> playerEvents = new ConcurrentLinkedQueue<>();
-    private final Queue<JsonObject> performanceEvents = new ConcurrentLinkedQueue<>();
-    private final Queue<JsonObject> serverEvents = new ConcurrentLinkedQueue<>();
+    private final Queue<PerformanceEventData> performanceEvents = new ConcurrentLinkedQueue<>();
+    private final Queue<ServerEventData> serverEvents = new ConcurrentLinkedQueue<>();
 
     /**
      * Initializes the EventCollector.
@@ -172,12 +172,8 @@ public class EventCollector {
      * @param playerCount The current number of online players.
      */
     public void addPerformanceEvent(double tps, int playerCount) {
-        JsonObject event = new JsonObject();
-        event.addProperty("timestamp", System.currentTimeMillis());
-        event.addProperty("tps", tps);
-        event.addProperty("player_count", playerCount);
-
-        performanceEvents.add(event);
+        // ⚡ Bolt Optimization: Use POJO to avoid JsonObject creation on main thread
+        performanceEvents.add(new PerformanceEventData(tps, playerCount));
     }
 
     /**
@@ -187,13 +183,8 @@ public class EventCollector {
      * @param pluginsLoaded The number of plugins currently loaded.
      */
     public void addServerStartEvent(String serverVersion, int pluginsLoaded) {
-        JsonObject event = new JsonObject();
-        event.addProperty("timestamp", System.currentTimeMillis());
-        event.addProperty("event_type", "SERVER_START");
-        event.addProperty("server_version", serverVersion);
-        event.addProperty("plugins_loaded", pluginsLoaded);
-
-        serverEvents.add(event);
+        // ⚡ Bolt Optimization: Use POJO to avoid JsonObject creation on main thread
+        serverEvents.add(new ServerEventData(serverVersion, pluginsLoaded));
     }
 
     /**
@@ -292,15 +283,24 @@ public class EventCollector {
         }
 
         JsonArray perfArray = new JsonArray();
-        JsonObject perfEvent;
+        PerformanceEventData perfEvent;
         while ((perfEvent = performanceEvents.poll()) != null) {
-            perfArray.add(perfEvent);
+            JsonObject event = new JsonObject();
+            event.addProperty("timestamp", perfEvent.timestamp);
+            event.addProperty("tps", perfEvent.tps);
+            event.addProperty("player_count", perfEvent.playerCount);
+            perfArray.add(event);
         }
 
         JsonArray serverArray = new JsonArray();
-        JsonObject serverEvent;
+        ServerEventData serverEvent;
         while ((serverEvent = serverEvents.poll()) != null) {
-            serverArray.add(serverEvent);
+            JsonObject event = new JsonObject();
+            event.addProperty("timestamp", serverEvent.timestamp);
+            event.addProperty("event_type", "SERVER_START");
+            event.addProperty("server_version", serverEvent.serverVersion);
+            event.addProperty("plugins_loaded", serverEvent.pluginsLoaded);
+            serverArray.add(event);
         }
 
         if (debugEnabled) {
@@ -545,6 +545,30 @@ public class EventCollector {
             this.quitReason = quitReason;
             this.sessionClean = sessionClean;
             this.connectionType = connectionType;
+        }
+    }
+
+    private static class PerformanceEventData {
+        final long timestamp;
+        final double tps;
+        final int playerCount;
+
+        PerformanceEventData(double tps, int playerCount) {
+            this.timestamp = System.currentTimeMillis();
+            this.tps = tps;
+            this.playerCount = playerCount;
+        }
+    }
+
+    private static class ServerEventData {
+        final long timestamp;
+        final String serverVersion;
+        final int pluginsLoaded;
+
+        ServerEventData(String serverVersion, int pluginsLoaded) {
+            this.timestamp = System.currentTimeMillis();
+            this.serverVersion = serverVersion;
+            this.pluginsLoaded = pluginsLoaded;
         }
     }
 }
