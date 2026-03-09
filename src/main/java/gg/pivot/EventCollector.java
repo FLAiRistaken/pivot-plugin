@@ -153,24 +153,19 @@ public class EventCollector {
      * @return Hashed UUID (64 hex characters)
      */
     private String hashUuid(String uuid) {
-        try {
-            MessageDigest digest = SHA256_DIGEST.get();
-            byte[] hash = digest.digest(uuid.getBytes(StandardCharsets.UTF_8));
+        MessageDigest digest = SHA256_DIGEST.get();
+        byte[] hash = digest.digest(uuid.getBytes(StandardCharsets.UTF_8));
 
-            // Convert bytes to hex string
-            StringBuilder hexString = new StringBuilder();
-            for (byte b : hash) {
-                String hex = Integer.toHexString(0xff & b);
-                if (hex.length() == 1) {
-                    hexString.append('0');
-                }
-                hexString.append(hex);
+        // Convert bytes to hex string
+        StringBuilder hexString = new StringBuilder();
+        for (byte b : hash) {
+            String hex = Integer.toHexString(0xff & b);
+            if (hex.length() == 1) {
+                hexString.append('0');
             }
-            return hexString.toString();
-        } catch (Exception e) {
-            logger.severe("SHA-256 hashing failed: " + e.getMessage());
-            return null;
+            hexString.append(hex);
         }
+        return hexString.toString();
     }
 
     /**
@@ -282,9 +277,17 @@ public class EventCollector {
 
             // Anonymization logic
             if (anonymize) {
-                String hashedUuid = hashUuid(polledEvent.playerUuid);
-                // SECURITY: Fail secure - if hashing fails, do not send raw UUID
-                event.addProperty("player_uuid", hashedUuid != null ? hashedUuid : "ANONYMIZATION_FAILED");
+                String hashedUuid;
+                try {
+                    hashedUuid = hashUuid(polledEvent.playerUuid);
+                } catch (RuntimeException e) {
+                    // RuntimeException is the only exception hashUuid() can throw: the SHA256_DIGEST
+                    // ThreadLocal initializer wraps NoSuchAlgorithmException in a plain RuntimeException.
+                    // SECURITY: Fail secure - if hashing fails, do not send raw UUID
+                    logger.severe("SHA-256 hashing failed during anonymization: " + e.getMessage());
+                    hashedUuid = "ANONYMIZATION_FAILED";
+                }
+                event.addProperty("player_uuid", hashedUuid);
                 event.addProperty("player_name", "Player");
             } else {
                 event.addProperty("player_uuid", polledEvent.playerUuid);
