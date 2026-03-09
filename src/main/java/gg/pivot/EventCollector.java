@@ -240,11 +240,14 @@ public class EventCollector {
      * Flush all collected events to the API.
      * <p>
      * Drains event queues, anonymizes player data (if enabled), builds a JSON payload,
-     * and sends it asynchronously.
+     * and sends it to the Pivot API.
      * </p>
      * <p>
-     * <b>Bolt Optimization:</b> Anonymization (SHA-256 hashing) is performed here
-     * (off the main thread) to prevent lag spikes.
+     * <b>Threading:</b> Normally invoked by a periodic async background task, so
+     * anonymization (SHA-256 hashing) and JSON construction run off the main thread.
+     * However, this method is also called synchronously on the main thread from
+     * {@code PivotPlugin.onDisable()} for a final drain on shutdown, so heavy work
+     * may occasionally run on the main thread during that path.
      * </p>
      */
     public void flush() {
