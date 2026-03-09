@@ -18,17 +18,20 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.Queue;
 import java.util.logging.Logger;
+import java.security.MessageDigest;
 
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.doNothing;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doNothing;
 
 @ExtendWith(MockitoExtension.class)
 public class EventCollectorTest {
@@ -220,5 +223,46 @@ public class EventCollectorTest {
         verify(mockProfiler).collectSample();
         // Verify the early-return was NOT taken (the "No events to send" log must NOT appear)
         verify(mockLogger, never()).info("No events to send");
+    }
+
+    @Test
+    public void testHashUuidIsDeterministicAndReusesThreadLocal() throws Exception {
+        when(plugin.getConfig()).thenReturn(config);
+        when(plugin.getApiKey()).thenCallRealMethod();
+        when(config.getString("api.key")).thenReturn("pvt_validkey1234567890");
+        when(plugin.getLogger()).thenReturn(Logger.getGlobal());
+
+        EventCollector collector = new EventCollector(plugin);
+
+        // Verify ThreadLocal reuse: the same MessageDigest instance must be returned on every get() within this thread
+        Field sha256Field = EventCollector.class.getDeclaredField("SHA256_DIGEST");
+        sha256Field.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        ThreadLocal<MessageDigest> threadLocal = (ThreadLocal<MessageDigest>) sha256Field.get(null);
+        MessageDigest instanceBefore = threadLocal.get();
+
+        Method hashUuidMethod = EventCollector.class.getDeclaredMethod("hashUuid", String.class);
+        hashUuidMethod.setAccessible(true);
+
+        String uuid = "550e8400-e29b-41d4-a716-446655440000";
+        String result1 = (String) hashUuidMethod.invoke(collector, uuid);
+        String result2 = (String) hashUuidMethod.invoke(collector, uuid);
+
+        MessageDigest instanceAfter = threadLocal.get();
+
+        // Must be non-null and exactly 64 hex characters (SHA-256 output)
+        assertNotNull(result1, "hashUuid must return a non-null result");
+        assertEquals(64, result1.length(), "SHA-256 hash must be 64 hex characters");
+
+        // Deterministic: same UUID must always produce the same hash
+        assertEquals(result1, result2, "hashUuid must be deterministic for the same input");
+
+        // Different UUIDs must produce different hashes
+        String otherUuid = "00000000-0000-0000-0000-000000000001";
+        String result3 = (String) hashUuidMethod.invoke(collector, otherUuid);
+        assertNotEquals(result1, result3, "hashUuid must distinguish different UUIDs");
+
+        // Explicit ThreadLocal reuse: the same MessageDigest instance must be returned across all calls on this thread
+        assertSame(instanceBefore, instanceAfter, "SHA256_DIGEST ThreadLocal must reuse the same MessageDigest instance within a thread");
     }
 }

@@ -173,6 +173,15 @@ public class TPSUtil {
         }
 
         // Manual calculation (universal fallback)
+        /*
+         * TPS Calculation Logic:
+         * 1. A BukkitRunnable (measureTick) runs every tick and records the nanosecond duration between ticks
+         *    into a rolling buffer (tickTimes) up to a maximum of SAMPLE_SIZE (100 ticks / ~5 seconds).
+         * 2. When TPS is requested (on demand), it sums the recorded durations and calculates the average
+         *    nanoseconds per tick.
+         * 3. The average is converted to milliseconds, and TPS is derived by dividing 1000ms by the average.
+         * 4. The result is capped at 20.0 TPS (the maximum possible on Minecraft).
+         */
         synchronized (tickTimes) {
             // ⚡ Bolt Optimization: Calculate on demand instead of every tick
             if (tickTimes.size() < 20) {
