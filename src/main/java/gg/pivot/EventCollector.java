@@ -86,9 +86,9 @@ public class EventCollector {
     }
 
     /**
-     * Sets the tick profiler instance to be used for collecting plugin performance metrics.
+     * Sets the tick profiler instance used to collect plugin performance data.
      *
-     * @param tickProfiler The profiler instance.
+     * @param tickProfiler The {@link TickProfiler} instance
      */
     public void setTickProfiler(TickProfiler tickProfiler) {
         this.tickProfiler = tickProfiler;

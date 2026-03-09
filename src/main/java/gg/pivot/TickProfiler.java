@@ -315,6 +315,12 @@ public class TickProfiler {
 
     // --- Spigot Listener Profiling ---
 
+    /**
+     * Records the execution time for a specific plugin and tracks overhead.
+     *
+     * @param pluginName The name of the plugin that executed
+     * @param durationNano The execution duration in nanoseconds
+     */
     private void record(String pluginName, long durationNano) {
         long startOverhead = System.nanoTime();
         try {
@@ -343,6 +349,13 @@ public class TickProfiler {
         logger.info("TickProfiler: Restored original listeners");
     }
 
+    /**
+     * Retrieves the {@link EventExecutor} from a {@link RegisteredListener} using reflection.
+     * Needed to bypass Spigot API limitations when creating wrapped listeners.
+     *
+     * @param listener The original registered listener
+     * @return The event executor
+     */
     private static EventExecutor getExecutor(RegisteredListener listener) {
         try {
             Field executorField = RegisteredListener.class.getDeclaredField("executor");

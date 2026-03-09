@@ -21,7 +21,7 @@ public class ConfigManager {
     }
 
     /**
-     * Helper to get the file configuration.
+     * Helper to get the file configuration from the main plugin.
      *
      * @return The Bukkit FileConfiguration object.
      */

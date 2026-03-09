@@ -26,6 +26,11 @@ import java.util.List;
 public class PivotCommand implements CommandExecutor, TabCompleter {
     private final PivotPlugin plugin;
 
+    /**
+     * Initializes the command handler.
+     *
+     * @param plugin The main plugin instance
+     */
     public PivotCommand(PivotPlugin plugin) {
         this.plugin = plugin;
     }
