@@ -8,12 +8,14 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.security.MessageDigest;
 import java.util.logging.Logger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -137,6 +139,13 @@ public class EventCollectorTest {
 
         EventCollector collector = new EventCollector(plugin);
 
+        // Verify ThreadLocal reuse: the same MessageDigest instance must be returned on every get() within this thread
+        Field sha256Field = EventCollector.class.getDeclaredField("SHA256_DIGEST");
+        sha256Field.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        ThreadLocal<MessageDigest> threadLocal = (ThreadLocal<MessageDigest>) sha256Field.get(null);
+        MessageDigest instanceBefore = threadLocal.get();
+
         Method hashUuidMethod = EventCollector.class.getDeclaredMethod("hashUuid", String.class);
         hashUuidMethod.setAccessible(true);
 
@@ -144,16 +153,21 @@ public class EventCollectorTest {
         String result1 = (String) hashUuidMethod.invoke(collector, uuid);
         String result2 = (String) hashUuidMethod.invoke(collector, uuid);
 
+        MessageDigest instanceAfter = threadLocal.get();
+
         // Must be non-null and exactly 64 hex characters (SHA-256 output)
         assertNotNull(result1, "hashUuid must return a non-null result");
         assertEquals(64, result1.length(), "SHA-256 hash must be 64 hex characters");
 
-        // Deterministic: same UUID must always produce the same hash (validates ThreadLocal reuse + digest reset)
+        // Deterministic: same UUID must always produce the same hash
         assertEquals(result1, result2, "hashUuid must be deterministic for the same input");
 
         // Different UUIDs must produce different hashes
         String otherUuid = "00000000-0000-0000-0000-000000000001";
         String result3 = (String) hashUuidMethod.invoke(collector, otherUuid);
         assertNotEquals(result1, result3, "hashUuid must distinguish different UUIDs");
+
+        // Explicit ThreadLocal reuse: the same MessageDigest instance must be returned across all calls on this thread
+        assertSame(instanceBefore, instanceAfter, "SHA256_DIGEST ThreadLocal must reuse the same MessageDigest instance within a thread");
     }
 }

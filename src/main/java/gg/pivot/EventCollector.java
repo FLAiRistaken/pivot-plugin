@@ -277,9 +277,17 @@ public class EventCollector {
 
             // Anonymization logic
             if (anonymize) {
-                String hashedUuid = hashUuid(polledEvent.playerUuid);
-                // SECURITY: Fail secure - if hashing fails, do not send raw UUID
-                event.addProperty("player_uuid", hashedUuid != null ? hashedUuid : "ANONYMIZATION_FAILED");
+                String hashedUuid;
+                try {
+                    hashedUuid = hashUuid(polledEvent.playerUuid);
+                } catch (RuntimeException e) {
+                    // RuntimeException is the only exception hashUuid() can throw: the SHA256_DIGEST
+                    // ThreadLocal initializer wraps NoSuchAlgorithmException in a plain RuntimeException.
+                    // SECURITY: Fail secure - if hashing fails, do not send raw UUID
+                    logger.severe("SHA-256 hashing failed during anonymization: " + e.getMessage());
+                    hashedUuid = "ANONYMIZATION_FAILED";
+                }
+                event.addProperty("player_uuid", hashedUuid);
                 event.addProperty("player_name", "Player");
             } else {
                 event.addProperty("player_uuid", polledEvent.playerUuid);
