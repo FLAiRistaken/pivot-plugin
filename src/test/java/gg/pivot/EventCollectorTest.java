@@ -122,18 +122,14 @@ public class EventCollectorTest {
         when(config.getBoolean("privacy.anonymize-players", false)).thenReturn(false);
         when(plugin.getApiEndpoint()).thenReturn("https://api.example.com/v1/ingest");
 
-        EventCollector collector = new EventCollector(plugin);
-
-        // Inject a mock OkHttpClient via reflection to capture the outgoing HTTP request
+        // Inject a mock OkHttpClient via the package-private constructor to capture the outgoing HTTP request
         OkHttpClient mockHttpClient = mock(OkHttpClient.class);
         Call mockCall = mock(Call.class);
         ArgumentCaptor<Request> requestCaptor = ArgumentCaptor.forClass(Request.class);
         when(mockHttpClient.newCall(requestCaptor.capture())).thenReturn(mockCall);
         doNothing().when(mockCall).enqueue(any(Callback.class));
 
-        Field httpClientField = EventCollector.class.getDeclaredField("httpClient");
-        httpClientField.setAccessible(true);
-        httpClientField.set(collector, mockHttpClient);
+        EventCollector collector = new EventCollector(plugin, mockHttpClient);
 
         // Obtain references to the private queues to assert their state
         Field perfEventsField = EventCollector.class.getDeclaredField("performanceEvents");

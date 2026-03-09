@@ -283,15 +283,18 @@ public class TickProfiler {
             String pluginName = entry.getKey();
             PluginSample sample = entry.getValue();
 
-            long sampleCount = sample.sampleCount.get();
-            long totalTimeNano = sample.totalTimeNano.get();
-            // Handle race where total/max are updated before sampleCount:
-            // if we see sampleCount == 0 but totals are non-zero, re-read once.
-            if (sampleCount == 0 && totalTimeNano != 0L) {
+            long sampleCount;
+            long totalTimeNano;
+            long maxTimeNano;
+            // Retry until we observe a consistent snapshot: read sampleCount after totals
+            // to avoid seeing totals updated without the matching sampleCount increment.
+            int retries = 0;
+            do {
+                totalTimeNano = sample.totalTimeNano.get();
+                maxTimeNano = sample.maxTimeNano.get();
                 sampleCount = sample.sampleCount.get();
-            }
+            } while (sampleCount == 0 && totalTimeNano != 0L && ++retries < 3);
             if (sampleCount == 0) continue;
-            long maxTimeNano = sample.maxTimeNano.get();
 
             double avgTickTimeMs = (totalTimeNano / (double) sampleCount) / 1_000_000.0;
             double totalTimeMs = totalTimeNano / 1_000_000.0;
