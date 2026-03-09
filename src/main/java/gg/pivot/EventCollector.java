@@ -39,12 +39,23 @@ public class EventCollector {
     private volatile String apiKey;
 
     // Added for Phase 3A
-    private TickProfiler tickProfiler;
+    // volatile ensures cross-thread visibility: setTickProfiler() may be called from the main thread
+    // while flush() runs on an async task thread.
+    private volatile TickProfiler tickProfiler;
 
     // ⚡ Bolt Optimization: Use ConcurrentLinkedQueue to avoid blocking main thread with locks
     private final Queue<PlayerEventData> playerEvents = new ConcurrentLinkedQueue<>();
-    private final Queue<JsonObject> performanceEvents = new ConcurrentLinkedQueue<>();
-    private final Queue<JsonObject> serverEvents = new ConcurrentLinkedQueue<>();
+    private final Queue<PerformanceEventData> performanceEvents = new ConcurrentLinkedQueue<>();
+    private final Queue<ServerEventData> serverEvents = new ConcurrentLinkedQueue<>();
+
+    // ⚡ Bolt Optimization: Reuse MessageDigest to prevent object instantiation overhead during async flush
+    private static final ThreadLocal<MessageDigest> SHA256_DIGEST = ThreadLocal.withInitial(() -> {
+        try {
+            return MessageDigest.getInstance("SHA-256");
+        } catch (NoSuchAlgorithmException e) {
+            throw new RuntimeException("SHA-256 not available!", e);
+        }
+    });
 
     /**
      * Initializes the EventCollector.
@@ -149,25 +160,19 @@ public class EventCollector {
      * @return Hashed UUID (64 hex characters)
      */
     private String hashUuid(String uuid) {
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] hash = digest.digest(uuid.getBytes(StandardCharsets.UTF_8));
+        MessageDigest digest = SHA256_DIGEST.get();
+        byte[] hash = digest.digest(uuid.getBytes(StandardCharsets.UTF_8));
 
-            // Convert bytes to hex string
-            StringBuilder hexString = new StringBuilder();
-            for (byte b : hash) {
-                String hex = Integer.toHexString(0xff & b);
-                if (hex.length() == 1) {
-                    hexString.append('0');
-                }
-                hexString.append(hex);
+        // Convert bytes to hex string
+        StringBuilder hexString = new StringBuilder();
+        for (byte b : hash) {
+            String hex = Integer.toHexString(0xff & b);
+            if (hex.length() == 1) {
+                hexString.append('0');
             }
-            return hexString.toString();
-        } catch (NoSuchAlgorithmException e) {
-            // SHA-256 should always be available
-            logger.severe("SHA-256 not available! Anonymization failed.");
-            return null;
+            hexString.append(hex);
         }
+        return hexString.toString();
     }
 
     /**
@@ -177,12 +182,8 @@ public class EventCollector {
      * @param playerCount The current number of online players.
      */
     public void addPerformanceEvent(double tps, int playerCount) {
-        JsonObject event = new JsonObject();
-        event.addProperty("timestamp", System.currentTimeMillis());
-        event.addProperty("tps", tps);
-        event.addProperty("player_count", playerCount);
-
-        performanceEvents.add(event);
+        // ⚡ Bolt Optimization: Use POJO to avoid JsonObject creation on main thread
+        performanceEvents.add(new PerformanceEventData(tps, playerCount));
     }
 
     /**
@@ -192,13 +193,8 @@ public class EventCollector {
      * @param pluginsLoaded The number of plugins currently loaded.
      */
     public void addServerStartEvent(String serverVersion, int pluginsLoaded) {
-        JsonObject event = new JsonObject();
-        event.addProperty("timestamp", System.currentTimeMillis());
-        event.addProperty("event_type", "SERVER_START");
-        event.addProperty("server_version", serverVersion);
-        event.addProperty("plugins_loaded", pluginsLoaded);
-
-        serverEvents.add(event);
+        // ⚡ Bolt Optimization: Use POJO to avoid JsonObject creation on main thread
+        serverEvents.add(new ServerEventData(serverVersion, pluginsLoaded));
     }
 
     /**
@@ -238,11 +234,14 @@ public class EventCollector {
      * Flush all collected events to the API.
      * <p>
      * Drains event queues, anonymizes player data (if enabled), builds a JSON payload,
-     * and sends it asynchronously.
+     * and sends it to the Pivot API.
      * </p>
      * <p>
-     * <b>Bolt Optimization:</b> Anonymization (SHA-256 hashing) is performed here
-     * (off the main thread) to prevent lag spikes.
+     * <b>Threading:</b> Normally invoked by a periodic async background task, so
+     * anonymization (SHA-256 hashing) and JSON construction run off the main thread.
+     * However, this method is also called synchronously on the main thread from
+     * {@code PivotPlugin.onDisable()} for a final drain on shutdown, so heavy work
+     * may occasionally run on the main thread during that path.
      * </p>
      */
     public void flush() {
@@ -252,6 +251,18 @@ public class EventCollector {
         if (debugEnabled) {
             logger.info("Flush called - checking for events to send");
         }
+
+        /*
+         * Batching Pattern Logic:
+         * 1. This flush() method is called periodically by an async background task during normal
+         *    operation, but it may also be invoked synchronously on the main thread during
+         *    PivotPlugin.onDisable() for a final drain on shutdown.
+         * 2. It drains events from concurrent queues directly into Gson JsonArrays.
+         * 3. Costly operations such as UUID hashing are performed here; during the normal
+         *    async flush path these run off the main thread, but during the onDisable() path
+         *    they may run on the main thread.
+         * 4. The arrays are consolidated into a single JSON payload to minimize API calls and network overhead.
+         */
 
         // Collect Tick Profile
         JsonObject tickProfileEvent = null;
@@ -279,9 +290,17 @@ public class EventCollector {
 
             // Anonymization logic
             if (anonymize) {
-                String hashedUuid = hashUuid(polledEvent.playerUuid);
-                // SECURITY: Fail secure - if hashing fails, do not send raw UUID
-                event.addProperty("player_uuid", hashedUuid != null ? hashedUuid : "ANONYMIZATION_FAILED");
+                String hashedUuid;
+                try {
+                    hashedUuid = hashUuid(polledEvent.playerUuid);
+                } catch (RuntimeException e) {
+                    // RuntimeException is the only exception hashUuid() can throw: the SHA256_DIGEST
+                    // ThreadLocal initializer wraps NoSuchAlgorithmException in a plain RuntimeException.
+                    // SECURITY: Fail secure - if hashing fails, do not send raw UUID
+                    logger.severe("SHA-256 hashing failed during anonymization: " + e.getMessage());
+                    hashedUuid = "ANONYMIZATION_FAILED";
+                }
+                event.addProperty("player_uuid", hashedUuid);
                 event.addProperty("player_name", "Player");
             } else {
                 event.addProperty("player_uuid", polledEvent.playerUuid);
@@ -297,15 +316,24 @@ public class EventCollector {
         }
 
         JsonArray perfArray = new JsonArray();
-        JsonObject perfEvent;
+        PerformanceEventData perfEvent;
         while ((perfEvent = performanceEvents.poll()) != null) {
-            perfArray.add(perfEvent);
+            JsonObject event = new JsonObject();
+            event.addProperty("timestamp", perfEvent.timestamp);
+            event.addProperty("tps", perfEvent.tps);
+            event.addProperty("player_count", perfEvent.playerCount);
+            perfArray.add(event);
         }
 
         JsonArray serverArray = new JsonArray();
-        JsonObject serverEvent;
+        ServerEventData serverEvent;
         while ((serverEvent = serverEvents.poll()) != null) {
-            serverArray.add(serverEvent);
+            JsonObject event = new JsonObject();
+            event.addProperty("timestamp", serverEvent.timestamp);
+            event.addProperty("event_type", "SERVER_START");
+            event.addProperty("server_version", serverEvent.serverVersion);
+            event.addProperty("plugins_loaded", serverEvent.pluginsLoaded);
+            serverArray.add(event);
         }
 
         if (debugEnabled) {
@@ -550,6 +578,30 @@ public class EventCollector {
             this.quitReason = quitReason;
             this.sessionClean = sessionClean;
             this.connectionType = connectionType;
+        }
+    }
+
+    private static class PerformanceEventData {
+        final long timestamp;
+        final double tps;
+        final int playerCount;
+
+        PerformanceEventData(double tps, int playerCount) {
+            this.timestamp = System.currentTimeMillis();
+            this.tps = tps;
+            this.playerCount = playerCount;
+        }
+    }
+
+    private static class ServerEventData {
+        final long timestamp;
+        final String serverVersion;
+        final int pluginsLoaded;
+
+        ServerEventData(String serverVersion, int pluginsLoaded) {
+            this.timestamp = System.currentTimeMillis();
+            this.serverVersion = serverVersion;
+            this.pluginsLoaded = pluginsLoaded;
         }
     }
 }
