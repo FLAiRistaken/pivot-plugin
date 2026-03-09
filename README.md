@@ -48,7 +48,7 @@ privacy:
 
 profiling:
   enabled: true
-  mode: auto                  # auto | paper_only | custom_only | disabled
+  mode: auto                  # auto | paper_only | custom_only
   privacy:
     anonymize_plugin_names: false # Hash plugin names in reports
   performance:
