@@ -354,12 +354,12 @@ boolean profilingEnabled = config.isProfilingEnabled();
 
 ### Batching Pattern
 The plugin minimizes network and CPU impact by batching events over a configured interval (`collection.batch-interval`, default 60s).
-- **Queuing:** Events (player, server, performance) are instantly added to concurrent queues off the main thread.
-- **Flushing:** A background async task calls `EventCollector.flush()` which safely drains the queues. Data is drained directly into Gson `JsonArray`s to avoid intermediate list allocations.
-- **Anonymization:** Expensive operations like UUID hashing via SHA-256 are performed during the async flush, explicitly avoiding any lag on the main server thread.
+- **Queuing:** Events (player, server, performance) are typically enqueued from synchronous Bukkit handlers on the main server thread into non-blocking concurrent queues, keeping per-event overhead minimal.
+- **Flushing:** A background async task periodically calls `EventCollector.flush()`, which safely drains these queues off the main thread. Data is drained directly into Gson `JsonArray`s to avoid intermediate list allocations.
+- **Anonymization:** Expensive operations like UUID hashing via SHA-256 are performed during the asynchronous flush phase, explicitly avoiding any lag on the main server thread. Note: `flush()` is also called synchronously during `PivotPlugin.onDisable()`, so hashing may occur on the main thread during plugin shutdown.
 
 ### Profiling Integration
-The plugin's analytics includes server profiling. The `TickProfiler` actively measures how much time each plugin takes during a server tick using hybrid modes (Paper Timings or listener wrapping).
+The plugin's analytics includes server profiling. The `TickProfiler` actively measures how much time each plugin takes during a server tick using its custom listener-wrapping backend (including when running in "paper_timings" mode, which currently delegates to this backend rather than using native Paper Timings).
 - When the asynchronous `EventCollector.flush()` occurs, the collector gathers the current profile sample via `TickProfiler.collectSample()` and appends the `TICK_PROFILE` event to the batch payload.
 - A `TickProfiler` instance is provided to the collector via `setTickProfiler()` during initialization.
 
