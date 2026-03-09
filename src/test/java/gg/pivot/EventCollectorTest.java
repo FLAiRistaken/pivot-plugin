@@ -157,6 +157,8 @@ public class EventCollectorTest {
 
         // Parse the captured JSON payload and verify field names
         Request capturedRequest = requestCaptor.getValue();
+        assertNotNull(capturedRequest, "HTTP request should have been captured");
+        assertNotNull(capturedRequest.body(), "HTTP request body should not be null");
         Buffer buffer = new Buffer();
         capturedRequest.body().writeTo(buffer);
         String json = buffer.readUtf8();
