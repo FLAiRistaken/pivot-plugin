@@ -61,10 +61,13 @@ profiling:
   enabled: true
 
   # Profiling mode
-  # auto: Uses Paper Timings if available, otherwise Spigot custom profiling
-  # paper_only: Only uses Paper Timings (disables on Spigot)
-  # custom_only: Forces custom Spigot profiling even on Paper
-  # disabled: Disables profiling
+  # auto: Automatically selects a profiling backend based on platform.
+  #       Currently still uses the same custom listener-based profiler on all servers;
+  #       full Paper Timings v2 collection is not yet implemented.
+  # paper_only: Only enables profiling on Paper-based servers. On Paper it currently
+  #             still uses the same custom listener-based profiler (no Paper Timings v2).
+  # custom_only: Forces the custom listener-based Spigot-style profiling even on Paper.
+  # To disable profiling entirely, set profiling.enabled: false above.
   mode: auto
 
   # NOTE: The sampling, triggers and privacy.share_anonymous_data options below
