@@ -14,7 +14,6 @@ import java.util.logging.Logger;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.doReturn;
-import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 
 @ExtendWith(MockitoExtension.class)
@@ -26,10 +25,9 @@ public class TickProfilerTest {
     @Mock
     ConfigManager configManager;
 
-    /** Creates a TickProfiler with profiling disabled so no Bukkit.getServer() call is made. */
     private TickProfiler createDisabledProfiler() {
         doReturn(Logger.getGlobal()).when(plugin).getLogger();
-        lenient().doReturn(false).when(configManager).isProfilingEnabled();
+        doReturn(false).when(configManager).isProfilingEnabled();
         return new TickProfiler(plugin, configManager);
     }
 
