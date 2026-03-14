@@ -11,6 +11,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.TimeUnit;
@@ -79,6 +80,8 @@ public class EventCollector {
      * @param httpClient The HTTP client to use for outgoing requests
      */
     EventCollector(PivotPlugin plugin, OkHttpClient httpClient) {
+        Objects.requireNonNull(plugin, "plugin must not be null");
+        Objects.requireNonNull(httpClient, "httpClient must not be null");
         this.plugin = plugin;
         this.logger = plugin.getLogger();
 
