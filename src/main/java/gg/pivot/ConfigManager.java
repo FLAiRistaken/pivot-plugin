@@ -43,9 +43,9 @@ public class ConfigManager {
      * <p>
      * Options:
      * <ul>
-     *   <li>{@code auto} - Use Paper Timings if available, otherwise Spigot custom profiling.</li>
-     *   <li>{@code paper_only} - Only use Paper Timings (disables on Spigot).</li>
-     *   <li>{@code custom_only} - Force custom Spigot profiling even on Paper.</li>
+     *   <li>{@code auto} - On Paper, use TickProfiler's Paper-compatible timings mode (currently backed by the custom listener-wrapping backend, not native Paper Timings v2); on non-Paper, use the standard custom profiling.</li>
+     *   <li>{@code paper_only} - Only enable the profiler on Paper servers using the Paper-compatible timings mode (still backed by the custom listener-wrapping backend); disable profiling on non-Paper servers.</li>
+     *   <li>{@code custom_only} - Always use the standard custom profiling backend, even when running on Paper.</li>
      * </ul>
      * To disable profiling entirely, set {@code profiling.enabled: false} in config.
      * </p>

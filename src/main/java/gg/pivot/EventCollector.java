@@ -11,6 +11,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.TimeUnit;
@@ -65,6 +66,22 @@ public class EventCollector {
      * @param plugin The main plugin instance
      */
     public EventCollector(PivotPlugin plugin) {
+        this(plugin, new OkHttpClient.Builder()
+                .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+                .readTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+                .writeTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+                .build());
+    }
+
+    /**
+     * Package-private constructor for testing, allowing injection of a custom {@link OkHttpClient}.
+     *
+     * @param plugin     The main plugin instance
+     * @param httpClient The HTTP client to use for outgoing requests
+     */
+    EventCollector(PivotPlugin plugin, OkHttpClient httpClient) {
+        Objects.requireNonNull(plugin, "plugin must not be null");
+        Objects.requireNonNull(httpClient, "httpClient must not be null");
         this.plugin = plugin;
         this.logger = plugin.getLogger();
 
@@ -77,12 +94,7 @@ public class EventCollector {
             this.apiKey = null; // Disable sending
         }
 
-        // SECURITY: Set explicit timeouts to prevent resource exhaustion
-        this.httpClient = new OkHttpClient.Builder()
-                .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
-                .readTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
-                .writeTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
-                .build();
+        this.httpClient = httpClient;
     }
 
     /**

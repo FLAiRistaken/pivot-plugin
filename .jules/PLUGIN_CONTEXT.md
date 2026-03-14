@@ -323,8 +323,8 @@ privacy:
   track-hostnames: true       # Capture join hostnames
 
 profiling:
-  enabled: true
-  mode: auto                  # auto | paper_only | custom_only | disabled
+  enabled: true                # Set to false to completely disable profiling
+  mode: auto                   # auto | paper_only | custom_only
   privacy:
     anonymize_plugin_names: false
   performance:

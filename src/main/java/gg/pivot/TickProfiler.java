@@ -283,14 +283,11 @@ public class TickProfiler {
             String pluginName = entry.getKey();
             PluginSample sample = entry.getValue();
 
+            // sampleCount is always incremented before totalTimeNano/maxTimeNano in PluginSample.add(),
+            // so if sampleCount is 0 there are genuinely no samples this window.
             long sampleCount = sample.sampleCount.get();
-            long totalTimeNano = sample.totalTimeNano.get();
-            // Handle race where total/max are updated before sampleCount:
-            // if we see sampleCount == 0 but totals are non-zero, re-read once.
-            if (sampleCount == 0 && totalTimeNano != 0L) {
-                sampleCount = sample.sampleCount.get();
-            }
             if (sampleCount == 0) continue;
+            long totalTimeNano = sample.totalTimeNano.get();
             long maxTimeNano = sample.maxTimeNano.get();
 
             double avgTickTimeMs = (totalTimeNano / (double) sampleCount) / 1_000_000.0;
@@ -407,9 +404,11 @@ public class TickProfiler {
         final AtomicLong sampleCount = new AtomicLong(0);
 
         void add(long duration) {
+            // Increment sampleCount first so readers always see count >= 1 when totals are non-zero,
+            // eliminating the race where totalTimeNano is visible but sampleCount is still 0.
+            sampleCount.incrementAndGet();
             totalTimeNano.addAndGet(duration);
             maxTimeNano.accumulateAndGet(duration, Math::max);
-            sampleCount.incrementAndGet();
         }
     }
 
