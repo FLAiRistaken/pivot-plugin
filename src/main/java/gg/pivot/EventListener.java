@@ -38,6 +38,11 @@ public class EventListener implements Listener {
     // Store kick reasons to enrich quit events
     private final Map<UUID, String> kickReasons = new HashMap<>();
 
+    /**
+     * Initializes the EventListener with the main plugin instance.
+     *
+     * @param plugin The main plugin instance
+     */
     public EventListener(PivotPlugin plugin) {
         this.plugin = plugin;
     }

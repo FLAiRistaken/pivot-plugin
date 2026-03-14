@@ -13,7 +13,7 @@ import java.lang.reflect.Field;
 import java.util.logging.Logger;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 
 @ExtendWith(MockitoExtension.class)
@@ -27,8 +27,8 @@ public class TickProfilerTest {
 
     /** Creates a TickProfiler with profiling disabled so no Bukkit.getServer() call is made. */
     private TickProfiler createDisabledProfiler() {
-        when(plugin.getLogger()).thenReturn(Logger.getGlobal());
-        when(configManager.isProfilingEnabled()).thenReturn(false);
+        doReturn(Logger.getGlobal()).when(plugin).getLogger();
+        doReturn(false).when(configManager).isProfilingEnabled();
         return new TickProfiler(plugin, configManager);
     }
 
@@ -119,12 +119,12 @@ public class TickProfilerTest {
 
         // Mock Server and PluginManager
         Server server = mock(Server.class);
-        when(plugin.getServer()).thenReturn(server);
-        when(server.getVersion()).thenReturn("1.20.4");
+        doReturn(server).when(plugin).getServer();
+        doReturn("1.20.4").when(server).getVersion();
 
         PluginManager pm = mock(PluginManager.class);
-        when(server.getPluginManager()).thenReturn(pm);
-        when(pm.getPlugins()).thenReturn(new org.bukkit.plugin.Plugin[0]);
+        doReturn(pm).when(server).getPluginManager();
+        doReturn(new org.bukkit.plugin.Plugin[0]).when(pm).getPlugins();
 
         // Fix TPSUtil (static state manipulation)
         Field tpsInitialized = TPSUtil.class.getDeclaredField("initialized");

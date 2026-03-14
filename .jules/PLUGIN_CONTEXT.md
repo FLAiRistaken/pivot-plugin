@@ -29,12 +29,18 @@ pivot-plugin/
 │   │   │   ├── EventListener.java        # Player join/quit event handler
 │   │   │   ├── EventCollector.java       # Event batching and HTTP sending
 │   │   │   ├── PivotCommand.java         # Command handler (/pivot status, reload, etc.)
-│   │   │   └── TPSUtil.java              # Cross-version TPS detection
+│   │   │   ├── TPSUtil.java              # Cross-version TPS detection
+│   │   │   ├── TickProfiler.java         # Plugin performance profiling
+│   │   │   └── ConfigManager.java        # Configuration access and defaults
 │   │   └── resources/
 │   │       ├── config.yml                # User configuration (API key, intervals)
 │   │       └── plugin.yml                # Plugin metadata
 │   └── test/
-│       └── java/                         # No tests yet
+│       └── java/gg/pivot/
+│           ├── ConfigManagerTest.java         # Unit tests for config logic
+│           ├── ConfigValidationTest.java      # Test config validation rules
+│           ├── EventCollectorTest.java        # Test event batching logic
+│           └── TickProfilerTest.java          # Test profiling logic
 ├── target/                               # Build output (gitignored)
 │   └── PivotAnalytics-0.2.0-SNAPSHOT.jar # Shaded JAR with dependencies
 ├── pom.xml                               # Maven configuration
@@ -127,6 +133,21 @@ new BukkitRunnable() {
 httpClient.newCall(request).execute(); // Synchronous!
 ```
 
+### Scheduling Pattern
+For dynamic intervals (e.g., varying TPS sample intervals), use recursive scheduling instead of a fixed timer:
+```java
+private void scheduleNextTask(long delayTicks) {
+    new BukkitRunnable() {
+        @Override
+        public void run() {
+            // Task logic here
+            long nextDelay = calculateDynamicDelay();
+            scheduleNextTask(nextDelay);
+        }
+    }.runTaskLaterAsynchronously(plugin, delayTicks);
+}
+```
+
 ### Retry Logic (Future Enhancement)
 - Exponential backoff: 5s → 10s → 20s → 40s
 - Max 5 retries per batch
@@ -165,14 +186,21 @@ httpClient.newCall(request).execute(); // Synchronous!
   - `player_count` (int)
   - `timestamp` (long)
 
-**4. SERVER_START**
+**4. TICK_PROFILE**
+- **Trigger:** Scheduled task (collected with batch flush)
+- **Data Captured:**
+  - `plugins` (Array of objects): Execution time per plugin
+  - `sample_duration_seconds` (int)
+  - `profiling_mode` (String, e.g. "paper_timings" or "custom_spigot")
+
+**5. SERVER_START**
 - **Trigger:** Plugin Enable
 - **Data Captured:**
   - `server_version` (String)
   - `plugins_loaded` (int)
   - `timestamp` (long)
 
-**5. SERVER_STOP**
+**6. SERVER_STOP**
 - **Trigger:** Plugin Disable
 - **Data Captured:**
   - `reason` (String, e.g. "manual")
@@ -198,11 +226,39 @@ httpClient.newCall(request).execute(); // Synchronous!
       "tps": 19.8,
       "player_count": 12
     }
+  ],
+  "tick_profile_events": [
+    {
+        "event_type": "TICK_PROFILE",
+        "timestamp": 1736444400000,
+        "plugins": [ ... ]
+    }
   ]
 }
 ```
 
 See `../docs/EVENT_SCHEMAS.md` for full specification.
+
+---
+
+## Tick Profiling
+
+The `TickProfiler` implements a hybrid strategy to measure plugin performance impact without heavy external dependencies.
+
+1.  **Paper Mode (`paper_timings`)**:
+    *   Detects the presence of Timings v2 classes (e.g. `co.aikar.timings.TimingsManager`) for environment awareness only.
+    *   Currently delegates sampling to the same custom listener-wrapping implementation as **Spigot Mode** (Paper sampling still uses the `custom_spigot` path).
+
+2.  **Spigot Mode (`custom_spigot`)**:
+    *   Used on Spigot/CraftBukkit servers or when configured as `custom_only`.
+    *   Wraps every `RegisteredListener` with a `ProfiledRegisteredListener`.
+    *   Measures execution time of event handlers using `System.nanoTime()`.
+    *   **Overhead Protection:** When `profiling.performance.auto_disable_on_overhead` is enabled, automatically disables profiling after 3 consecutive ticks where internal profiling overhead exceeds `0.2ms` per tick (threshold configurable).
+    *   **Lock-Free Updates:** Uses `AtomicLong` for storing plugin performance metrics (`totalTimeNano`, `maxTimeNano`, `sampleCount`) to allow lock-free updates and reads without blocking the main thread.
+
+3.  **Configuration**:
+    *   Controlled via `profiling` section in `config.yml`.
+    *   Supports `auto`, `paper_only`, and `custom_only` modes. To disable profiling entirely, set `profiling.enabled: false`.
 
 ---
 
@@ -266,6 +322,15 @@ privacy:
   anonymize-players: false    # Hash UUIDs with SHA-256
   track-hostnames: true       # Capture join hostnames
 
+profiling:
+  enabled: true                # Set to false to completely disable profiling
+  mode: auto                   # auto | paper_only | custom_only
+  privacy:
+    anonymize_plugin_names: false
+  performance:
+    max_overhead_ms: 0.2
+    auto_disable_on_overhead: true
+
 debug:
   enabled: false              # Verbose logging
   log-batches: false          # Log full JSON payloads
@@ -277,6 +342,10 @@ debug:
 String apiKey = plugin.getConfig().getString("api.key");
 int batchInterval = plugin.getConfig().getInt("collection.batch-interval", 60);
 boolean debugEnabled = plugin.getConfig().getBoolean("debug.enabled", false);
+
+// ConfigManager usage
+ConfigManager config = new ConfigManager(plugin);
+boolean profilingEnabled = config.isProfilingEnabled();
 ```
 
 ---
@@ -298,6 +367,17 @@ boolean debugEnabled = plugin.getConfig().getBoolean("debug.enabled", false);
   - Defer anonymization (hashing) to async flush task
   - Direct queue draining to JsonArray (avoids intermediate allocations)
   - Lazy TPS calculation and cached server instances
+
+### Batching Pattern
+The plugin minimizes network and CPU impact by batching events over a configured interval (`collection.batch-interval`, default 60s).
+- **Queuing:** Events (player, server, performance) are typically enqueued from synchronous Bukkit handlers on the main server thread into non-blocking concurrent queues, keeping per-event overhead minimal.
+- **Flushing:** A background async task periodically calls `EventCollector.flush()`, which safely drains these queues off the main thread. Data is drained directly into Gson `JsonArray`s to avoid intermediate list allocations.
+- **Anonymization:** Expensive operations like UUID hashing via SHA-256 are performed during the asynchronous flush phase, explicitly avoiding any lag on the main server thread. Note: `flush()` is also called synchronously during `PivotPlugin.onDisable()`, so hashing may occur on the main thread during plugin shutdown.
+
+### Profiling Integration
+The plugin's analytics includes server profiling. The `TickProfiler` actively measures how much time each plugin takes during a server tick using its custom listener-wrapping backend (including when running in "paper_timings" mode, which currently delegates to this backend rather than using native Paper Timings).
+- When the asynchronous `EventCollector.flush()` occurs, the collector gathers the current profile sample via `TickProfiler.collectSample()` and appends the `TICK_PROFILE` event to the batch payload.
+- A `TickProfiler` instance is provided to the collector via `setTickProfiler()` during initialization.
 
 ### TPS Detection
 **3 methods in priority order:**
@@ -353,6 +433,19 @@ Supports 1.7.10+ including modded servers.
 - `getTPS()`: Return current TPS (0.0-20.0)
 - `getTPSInfo()`: Return detection method string
 - Supports Paper, Spigot (1.12-1.16, 1.17+), Manual fallback
+
+### TickProfiler.java
+**Purpose:** Plugin performance profiling
+- `initialize()`: Detect server type (Paper/Spigot) and setup profiling
+- `collectSample()`: Gather performance data for plugins
+- `setupSpigotProfiling()`: Wrap listeners for Spigot
+- `shutdown()`: Unwrap listeners and cleanup
+
+### ConfigManager.java
+**Purpose:** Configuration wrapper
+- `isProfilingEnabled()`: Check if profiling is enabled
+- `getProfilingMode()`: Get profiling mode (auto/paper/custom)
+- `getMaxOverheadMs()`: Get performance safety limits
 
 ---
 
@@ -484,7 +577,7 @@ Jules should read these files for context:
 ## Current Feature Status
 
 ### ✅ Implemented
-- Event capture (PLAYER_JOIN, PLAYER_QUIT, TPS_SAMPLE)
+- Event capture (PLAYER_JOIN, PLAYER_QUIT, TPS_SAMPLE, TICK_PROFILE)
 - Hostname attribution with caching
 - Cross-version TPS detection (Paper/Spigot/Manual)
 - HTTP batching with OkHttp
@@ -494,6 +587,7 @@ Jules should read these files for context:
 - Tab completion
 - Debug logging
 - Java 8 compatibility
+- Tick Profiling (Paper/Spigot hybrid)
 
 ### ❌ Not Yet Implemented
 - Event queue size limits (prevent memory leaks)

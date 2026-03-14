@@ -1,21 +1,37 @@
 package gg.pivot;
 
+import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+import okhttp3.Call;
+import okhttp3.Callback;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okio.Buffer;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.util.Queue;
 import java.util.logging.Logger;
+import java.security.MessageDigest;
 
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doNothing;
 
 @ExtendWith(MockitoExtension.class)
 public class EventCollectorTest {
@@ -96,6 +112,85 @@ public class EventCollectorTest {
     }
 
     @Test
+    public void testFlushSerializesPerformanceAndServerEventsAndDrainsQueues() throws Exception {
+        // Setup: valid API key and endpoint so flush() proceeds to build and send JSON
+        when(plugin.getLogger()).thenReturn(Logger.getGlobal());
+        when(plugin.getConfig()).thenReturn(config);
+        when(plugin.getApiKey()).thenReturn("pvt_validkey1234567890");
+        when(config.getBoolean("debug.enabled", false)).thenReturn(false);
+        when(config.getBoolean("debug.log-batches", false)).thenReturn(false);
+        when(config.getBoolean("privacy.anonymize-players", false)).thenReturn(false);
+        when(plugin.getApiEndpoint()).thenReturn("https://api.example.com/v1/ingest");
+
+        // Inject a mock OkHttpClient via the package-private constructor to capture the outgoing HTTP request
+        OkHttpClient mockHttpClient = mock(OkHttpClient.class);
+        Call mockCall = mock(Call.class);
+        ArgumentCaptor<Request> requestCaptor = ArgumentCaptor.forClass(Request.class);
+        when(mockHttpClient.newCall(requestCaptor.capture())).thenReturn(mockCall);
+        doNothing().when(mockCall).enqueue(any(Callback.class));
+
+        EventCollector collector = new EventCollector(plugin, mockHttpClient);
+
+        // Obtain references to the private queues to assert their state
+        Field perfEventsField = EventCollector.class.getDeclaredField("performanceEvents");
+        perfEventsField.setAccessible(true);
+        Queue<?> perfQueue = (Queue<?>) perfEventsField.get(collector);
+
+        Field serverEventsField = EventCollector.class.getDeclaredField("serverEvents");
+        serverEventsField.setAccessible(true);
+        Queue<?> serverQueue = (Queue<?>) serverEventsField.get(collector);
+
+        // Enqueue one performance event and one server start event
+        collector.addPerformanceEvent(19.5, 7);
+        collector.addServerStartEvent("git-Paper-123", 15);
+
+        assertEquals(1, perfQueue.size(), "Performance event should be queued before flush");
+        assertEquals(1, serverQueue.size(), "Server event should be queued before flush");
+
+        // Run flush – this drains the queues and serializes events to JSON
+        collector.flush();
+
+        // Queues must be empty after flush
+        assertEquals(0, perfQueue.size(), "Performance event queue must be empty after flush");
+        assertEquals(0, serverQueue.size(), "Server event queue must be empty after flush");
+
+        // Parse the captured JSON payload and verify field names
+        Request capturedRequest = requestCaptor.getValue();
+        assertNotNull(capturedRequest, "HTTP request should have been captured");
+        assertNotNull(capturedRequest.body(), "HTTP request body should not be null");
+        Buffer buffer = new Buffer();
+        capturedRequest.body().writeTo(buffer);
+        String json = buffer.readUtf8();
+
+        JsonObject payload = JsonParser.parseString(json).getAsJsonObject();
+
+        // Verify performance event JSON fields
+        JsonArray perfArray = payload.getAsJsonArray("performance_events");
+        assertNotNull(perfArray, "performance_events array must be present in payload");
+        assertEquals(1, perfArray.size(), "Exactly one performance event must be serialized");
+        JsonObject perfEvent = perfArray.get(0).getAsJsonObject();
+        assertTrue(perfEvent.has("timestamp"), "Performance event must have 'timestamp' field");
+        assertTrue(perfEvent.has("tps"), "Performance event must have 'tps' field");
+        assertTrue(perfEvent.has("player_count"), "Performance event must have 'player_count' field");
+        assertEquals(19.5, perfEvent.get("tps").getAsDouble(), 0.001);
+        assertEquals(7, perfEvent.get("player_count").getAsInt());
+
+        // Verify server event JSON fields, including the hardcoded SERVER_START event_type
+        JsonArray serverArray = payload.getAsJsonArray("server_events");
+        assertNotNull(serverArray, "server_events array must be present in payload");
+        assertEquals(1, serverArray.size(), "Exactly one server event must be serialized");
+        JsonObject serverEvent = serverArray.get(0).getAsJsonObject();
+        assertTrue(serverEvent.has("timestamp"), "Server event must have 'timestamp' field");
+        assertTrue(serverEvent.has("event_type"), "Server event must have 'event_type' field");
+        assertEquals("SERVER_START", serverEvent.get("event_type").getAsString(),
+                "Server event_type must be 'SERVER_START'");
+        assertTrue(serverEvent.has("server_version"), "Server event must have 'server_version' field");
+        assertEquals("git-Paper-123", serverEvent.get("server_version").getAsString());
+        assertTrue(serverEvent.has("plugins_loaded"), "Server event must have 'plugins_loaded' field");
+        assertEquals(15, serverEvent.get("plugins_loaded").getAsInt());
+    }
+
+    @Test
     public void testFlushDoesNotDropTickProfileEventWhenQueuesEmpty() throws Exception {
         // Use a mock logger so we can assert on log messages
         Logger mockLogger = mock(Logger.class);
@@ -124,5 +219,46 @@ public class EventCollectorTest {
         verify(mockProfiler).collectSample();
         // Verify the early-return was NOT taken (the "No events to send" log must NOT appear)
         verify(mockLogger, never()).info("No events to send");
+    }
+
+    @Test
+    public void testHashUuidIsDeterministicAndReusesThreadLocal() throws Exception {
+        when(plugin.getConfig()).thenReturn(config);
+        when(plugin.getApiKey()).thenCallRealMethod();
+        when(config.getString("api.key")).thenReturn("pvt_validkey1234567890");
+        when(plugin.getLogger()).thenReturn(Logger.getGlobal());
+
+        EventCollector collector = new EventCollector(plugin);
+
+        // Verify ThreadLocal reuse: the same MessageDigest instance must be returned on every get() within this thread
+        Field sha256Field = EventCollector.class.getDeclaredField("SHA256_DIGEST");
+        sha256Field.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        ThreadLocal<MessageDigest> threadLocal = (ThreadLocal<MessageDigest>) sha256Field.get(null);
+        MessageDigest instanceBefore = threadLocal.get();
+
+        Method hashUuidMethod = EventCollector.class.getDeclaredMethod("hashUuid", String.class);
+        hashUuidMethod.setAccessible(true);
+
+        String uuid = "550e8400-e29b-41d4-a716-446655440000";
+        String result1 = (String) hashUuidMethod.invoke(collector, uuid);
+        String result2 = (String) hashUuidMethod.invoke(collector, uuid);
+
+        MessageDigest instanceAfter = threadLocal.get();
+
+        // Must be non-null and exactly 64 hex characters (SHA-256 output)
+        assertNotNull(result1, "hashUuid must return a non-null result");
+        assertEquals(64, result1.length(), "SHA-256 hash must be 64 hex characters");
+
+        // Deterministic: same UUID must always produce the same hash
+        assertEquals(result1, result2, "hashUuid must be deterministic for the same input");
+
+        // Different UUIDs must produce different hashes
+        String otherUuid = "00000000-0000-0000-0000-000000000001";
+        String result3 = (String) hashUuidMethod.invoke(collector, otherUuid);
+        assertNotEquals(result1, result3, "hashUuid must distinguish different UUIDs");
+
+        // Explicit ThreadLocal reuse: the same MessageDigest instance must be returned across all calls on this thread
+        assertSame(instanceBefore, instanceAfter, "SHA256_DIGEST ThreadLocal must reuse the same MessageDigest instance within a thread");
     }
 }

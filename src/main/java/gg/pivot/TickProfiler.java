@@ -54,6 +54,12 @@ public class TickProfiler {
 
     // Listener-wrapping profiling state is reverted on shutdown using wrappedListeners
 
+    /**
+     * Initializes the TickProfiler.
+     *
+     * @param plugin        The main plugin instance.
+     * @param configManager The configuration manager to retrieve profiling settings.
+     */
     public TickProfiler(PivotPlugin plugin, ConfigManager configManager) {
         this.plugin = plugin;
         this.configManager = configManager;
@@ -62,6 +68,17 @@ public class TickProfiler {
         initialize();
     }
 
+    /**
+     * Initializes profiling based on configuration and server type.
+     * <p>
+     * Detects whether the server is running Paper by probing for Timings v2 classes.
+     * When Paper is detected and {@code paper_timings} mode is active, profiling still
+     * uses the custom listener-wrapping backend ({@code custom_spigot}) because the
+     * full Paper Timings v2 collector is not yet implemented.
+     * Falls back to custom Spigot profiling (listener wrapping) if Paper is not detected
+     * or if {@code custom_only} is configured.
+     * </p>
+     */
     private void initialize() {
         if (!configManager.isProfilingEnabled()) {
             this.profilingEnabled = false;
@@ -121,6 +138,15 @@ public class TickProfiler {
         }
     }
 
+    /**
+     * Sets up custom profiling for Spigot servers by wrapping registered listeners.
+     * <p>
+     * Iterates through all registered handlers and replaces them with {@link ProfiledRegisteredListener}.
+     * This allows measuring execution time of each event listener.
+     * </p>
+     *
+     * @return {@code true} if setup was successful, {@code false} otherwise.
+     */
     private boolean setupSpigotProfiling() {
         try {
             wrappedListeners.clear();
@@ -148,6 +174,15 @@ public class TickProfiler {
         }
     }
 
+    /**
+     * Collects performance samples from plugins.
+     * <p>
+     * Calculates profiling overhead and auto-disables if limits are exceeded.
+     * Aggregates data from either Paper Timings or custom Spigot profiling.
+     * </p>
+     *
+     * @return A {@link JsonObject} containing the profile data, or {@code null} if disabled or no data.
+     */
     public JsonObject collectSample() {
         if (!profilingEnabled || autoDisabled) return null;
 
@@ -196,6 +231,15 @@ public class TickProfiler {
         return event;
     }
 
+    /**
+     * Collects samples using Paper Timings API.
+     * <p>
+     * Currently falls back to Spigot sampling as full Paper implementation is pending.
+     * </p>
+     *
+     * @param pluginsArray    The JSON array to populate with plugin data.
+     * @param durationSeconds The duration of the sample in seconds.
+     */
     private void collectPaperSamples(JsonArray pluginsArray, int durationSeconds) {
         // Full Paper Timings v2 implementation via reflection is incomplete.
         // Fall back to the custom Spigot sampling which works on both Paper and Spigot.
@@ -217,6 +261,16 @@ public class TickProfiler {
         }
     }
 
+    /**
+     * Collects samples from the custom Spigot profiling map.
+     * <p>
+     * Swaps the current sample map with a new one to ensure thread safety while processing.
+     * Aggregates execution times and counts for each plugin.
+     * </p>
+     *
+     * @param pluginsArray    The JSON array to populate with plugin data.
+     * @param durationSeconds The duration of the sample in seconds.
+     */
     private void collectSpigotSamples(JsonArray pluginsArray, int durationSeconds) {
         // Swap map
         ConcurrentHashMap<String, PluginSample> snapshot = currentSpigotSamples;
@@ -229,15 +283,12 @@ public class TickProfiler {
             String pluginName = entry.getKey();
             PluginSample sample = entry.getValue();
 
-            long totalTimeNano;
-            long maxTimeNano;
-            long sampleCount;
-            synchronized (sample) {
-                sampleCount = sample.sampleCount;
-                if (sampleCount == 0) continue;
-                totalTimeNano = sample.totalTimeNano;
-                maxTimeNano = sample.maxTimeNano;
-            }
+            // sampleCount is always incremented before totalTimeNano/maxTimeNano in PluginSample.add(),
+            // so if sampleCount is 0 there are genuinely no samples this window.
+            long sampleCount = sample.sampleCount.get();
+            if (sampleCount == 0) continue;
+            long totalTimeNano = sample.totalTimeNano.get();
+            long maxTimeNano = sample.maxTimeNano.get();
 
             double avgTickTimeMs = (totalTimeNano / (double) sampleCount) / 1_000_000.0;
             double totalTimeMs = totalTimeNano / 1_000_000.0;
@@ -261,6 +312,12 @@ public class TickProfiler {
 
     // --- Spigot Listener Profiling ---
 
+    /**
+     * Records the execution time for a specific plugin and tracks overhead.
+     *
+     * @param pluginName The name of the plugin that executed
+     * @param durationNano The execution duration in nanoseconds
+     */
     private void record(String pluginName, long durationNano) {
         long startOverhead = System.nanoTime();
         try {
@@ -289,6 +346,13 @@ public class TickProfiler {
         logger.info("TickProfiler: Restored original listeners");
     }
 
+    /**
+     * Retrieves the {@link EventExecutor} from a {@link RegisteredListener} using reflection.
+     * Needed to bypass Spigot API limitations when creating wrapped listeners.
+     *
+     * @param listener The original registered listener
+     * @return The event executor
+     */
     private static EventExecutor getExecutor(RegisteredListener listener) {
         try {
             Field executorField = RegisteredListener.class.getDeclaredField("executor");
@@ -300,6 +364,9 @@ public class TickProfiler {
     }
 
 
+    /**
+     * A wrapper for {@link RegisteredListener} that measures execution time.
+     */
     private class ProfiledRegisteredListener extends RegisteredListener {
         private final RegisteredListener delegate;
         private final String pluginName;
@@ -328,15 +395,20 @@ public class TickProfiler {
         }
     }
 
+    /**
+     * Holds execution time stats for a single plugin.
+     */
     private static class PluginSample {
-        long totalTimeNano = 0;
-        long maxTimeNano = 0;
-        long sampleCount = 0;
+        final AtomicLong totalTimeNano = new AtomicLong(0);
+        final AtomicLong maxTimeNano = new AtomicLong(0);
+        final AtomicLong sampleCount = new AtomicLong(0);
 
-        synchronized void add(long duration) {
-            totalTimeNano += duration;
-            if (duration > maxTimeNano) maxTimeNano = duration;
-            sampleCount++;
+        void add(long duration) {
+            // Increment sampleCount first so readers always see count >= 1 when totals are non-zero,
+            // eliminating the race where totalTimeNano is visible but sampleCount is still 0.
+            sampleCount.incrementAndGet();
+            totalTimeNano.addAndGet(duration);
+            maxTimeNano.accumulateAndGet(duration, Math::max);
         }
     }
 
@@ -365,20 +437,15 @@ public class TickProfiler {
         Map<String, PluginSampleSnapshot> snapshot = new HashMap<>();
         for (Map.Entry<String, PluginSample> entry : currentSpigotSamples.entrySet()) {
             PluginSample sample = entry.getValue();
-            long totalTimeNano;
-            long maxTimeNano;
-            long sampleCount;
-            synchronized (sample) {
-                totalTimeNano = sample.totalTimeNano;
-                maxTimeNano = sample.maxTimeNano;
-                sampleCount = sample.sampleCount;
-            }
             snapshot.put(entry.getKey(),
-                    new PluginSampleSnapshot(totalTimeNano, maxTimeNano, sampleCount));
+                    new PluginSampleSnapshot(sample.totalTimeNano.get(), sample.maxTimeNano.get(), sample.sampleCount.get()));
         }
         return Collections.unmodifiableMap(snapshot);
     }
 
+    /**
+     * Stores information about a wrapped listener to allow restoration on shutdown.
+     */
     private static class WrappedListenerInfo {
         final HandlerList list;
         final RegisteredListener original;
