@@ -246,7 +246,8 @@ public class EventCollector {
      * Flush all collected events to the API.
      * <p>
      * Drains event queues, anonymizes player data (if enabled), builds a JSON payload,
-     * and sends it to the Pivot API.
+     * and sends it to the Pivot API. By collecting events in queues and flushing
+     * them periodically, we batch network requests and minimize API overhead.
      * </p>
      * <p>
      * <b>Threading:</b> Normally invoked by a periodic async background task, so
