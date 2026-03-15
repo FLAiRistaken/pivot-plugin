@@ -264,7 +264,7 @@ public class TickProfiler {
     /**
      * Collects samples from the custom Spigot profiling map.
      * <p>
-     * Swaps the current sample map with a new one to ensure thread safety while processing.
+     * Resets the counters in the current sample map to ensure thread safety while processing.
      * Aggregates execution times and counts for each plugin.
      * </p>
      *
@@ -272,23 +272,19 @@ public class TickProfiler {
      * @param durationSeconds The duration of the sample in seconds.
      */
     private void collectSpigotSamples(JsonArray pluginsArray, int durationSeconds) {
-        // Swap map
-        ConcurrentHashMap<String, PluginSample> snapshot = currentSpigotSamples;
-        currentSpigotSamples = new ConcurrentHashMap<>();
-
         boolean anonymize = configManager.isAnonymizePluginNames();
         long windowMillis = durationSeconds * 1000L;
 
-        for (Map.Entry<String, PluginSample> entry : snapshot.entrySet()) {
+        for (Map.Entry<String, PluginSample> entry : currentSpigotSamples.entrySet()) {
             String pluginName = entry.getKey();
             PluginSample sample = entry.getValue();
 
-            // sampleCount is always incremented before totalTimeNano/maxTimeNano in PluginSample.add(),
-            // so if sampleCount is 0 there are genuinely no samples this window.
-            long sampleCount = sample.sampleCount.get();
+            // ⚡ Bolt Optimization: Read and reset counters without replacing the map,
+            // allowing listeners to cache the PluginSample instance.
+            long sampleCount = sample.sampleCount.getAndSet(0);
             if (sampleCount == 0) continue;
-            long totalTimeNano = sample.totalTimeNano.get();
-            long maxTimeNano = sample.maxTimeNano.get();
+            long totalTimeNano = sample.totalTimeNano.getAndSet(0);
+            long maxTimeNano = sample.maxTimeNano.getAndSet(0);
 
             double avgTickTimeMs = (totalTimeNano / (double) sampleCount) / 1_000_000.0;
             double totalTimeMs = totalTimeNano / 1_000_000.0;
@@ -311,22 +307,6 @@ public class TickProfiler {
     }
 
     // --- Spigot Listener Profiling ---
-
-    /**
-     * Records the execution time for a specific plugin and tracks overhead.
-     *
-     * @param pluginName The name of the plugin that executed
-     * @param durationNano The execution duration in nanoseconds
-     */
-    private void record(String pluginName, long durationNano) {
-        long startOverhead = System.nanoTime();
-        try {
-            PluginSample sample = currentSpigotSamples.computeIfAbsent(pluginName, k -> new PluginSample());
-            sample.add(durationNano);
-        } finally {
-            overheadNano.addAndGet(System.nanoTime() - startOverhead);
-        }
-    }
 
     /**
      * Shuts down the profiler, restoring any wrapped {@link RegisteredListener}s
@@ -369,14 +349,15 @@ public class TickProfiler {
      */
     private class ProfiledRegisteredListener extends RegisteredListener {
         private final RegisteredListener delegate;
-        private final String pluginName;
         private final TickProfiler profiler;
+        private final PluginSample cachedSample; // ⚡ Bolt Optimization: Cache sample reference
 
         public ProfiledRegisteredListener(RegisteredListener delegate, String pluginName, TickProfiler profiler) {
             super(delegate.getListener(), getExecutor(delegate), delegate.getPriority(), delegate.getPlugin(), delegate.isIgnoringCancelled());
             this.delegate = delegate;
-            this.pluginName = pluginName;
             this.profiler = profiler;
+            // Get or create the sample object once during registration to eliminate map lookups on every event
+            this.cachedSample = profiler.currentSpigotSamples.computeIfAbsent(pluginName, k -> new PluginSample());
         }
 
         @Override
@@ -390,7 +371,10 @@ public class TickProfiler {
                 delegate.callEvent(event);
             } finally {
                 long duration = System.nanoTime() - start;
-                profiler.record(pluginName, duration);
+                // ⚡ Bolt Optimization: Inline recording to avoid map lookup and method call overhead
+                long startOverhead = System.nanoTime();
+                cachedSample.add(duration);
+                profiler.overheadNano.addAndGet(System.nanoTime() - startOverhead);
             }
         }
     }
