@@ -423,6 +423,13 @@ public class EventCollector {
      * @param json The JSON payload.
      */
     private void sendToAPI(String json) {
+        sendToAPI(json, 1);
+    }
+
+    /**
+     * Send JSON payload to API endpoint asynchronously with retry logic.
+     */
+    private void sendToAPI(String json, int attempt) {
         Request request = buildRequest(json);
         if (request == null) return;
 
@@ -441,6 +448,21 @@ public class EventCollector {
                 if (plugin.getConfig().getBoolean("debug.enabled", false)) {
                     logger.warning("Network error details: " + e.getClass().getSimpleName());
                 }
+
+                if (attempt <= 3) {
+                    long delayTicks = attempt == 1 ? 100L : attempt == 2 ? 300L : 900L;
+                    logger.info("Retrying batch send in " + (delayTicks / 20) + "s (Attempt " + (attempt + 1) + "/4)");
+                    org.bukkit.Bukkit.getScheduler().runTaskLaterAsynchronously(plugin, () -> sendToAPI(json, attempt + 1), delayTicks);
+                }
+
+
+
+
+
+
+
+
+
             }
 
             @Override
@@ -465,9 +487,15 @@ public class EventCollector {
                             logger.severe("Authentication failed! Check your API key in config.yml");
                             logger.severe("Make sure your API key starts with 'pvt_'");
                         } else if (response.code() == 429) {
-                            logger.warning("Rate limit exceeded. Events will be sent in next batch.");
+                            logger.warning("Rate limit exceeded.");
                         } else if (response.code() == 400) {
                             logger.severe("Invalid request data. Enable debug mode for details.");
+                        }
+
+                        if (response.code() != 401 && response.code() != 400 && attempt <= 3) {
+                            long delayTicks = attempt == 1 ? 100L : attempt == 2 ? 300L : 900L;
+                            logger.info("Retrying batch send in " + (delayTicks / 20) + "s (Attempt " + (attempt + 1) + "/4)");
+                            org.bukkit.Bukkit.getScheduler().runTaskLaterAsynchronously(plugin, () -> sendToAPI(json, attempt + 1), delayTicks);
                         }
                     }
                 } catch (IOException e) {
