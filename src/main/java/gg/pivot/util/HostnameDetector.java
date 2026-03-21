@@ -33,9 +33,10 @@ public class HostnameDetector {
      *   <li>IPv6 bracketed form {@code "[::1]"} → {@code "[::1]"}</li>
      *   <li>Standard form {@code "example.com:25565"} → {@code "example.com"}</li>
      *   <li>Standard form {@code "example.com"} → {@code "example.com"}</li>
+     *   <li>Unbracketed IPv6 {@code "2001:db8::1"} → {@code "2001:db8::1"} (returned unchanged)</li>
      * </ul>
      */
-    static String stripPort(String host) {
+    public static String stripPort(String host) {
         if (host.startsWith("[")) {
             // IPv6 bracketed: "[addr]:port" or "[addr]"
             int closingBracket = host.indexOf(']');
@@ -44,10 +45,11 @@ public class HostnameDetector {
             }
             return host;
         }
-        // Standard host:port or bare host
-        int colon = host.lastIndexOf(':');
-        if (colon != -1) {
-            return host.substring(0, colon);
+        // Only strip if there is exactly one colon (standard host:port).
+        // Multiple colons means an unbracketed IPv6 literal – leave it unchanged.
+        int firstColon = host.indexOf(':');
+        if (firstColon != -1 && firstColon == host.lastIndexOf(':')) {
+            return host.substring(0, firstColon);
         }
         return host;
     }

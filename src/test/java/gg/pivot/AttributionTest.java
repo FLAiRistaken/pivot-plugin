@@ -11,7 +11,6 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.mockito.ArgumentCaptor;
 
-import java.net.InetAddress;
 import java.util.UUID;
 import java.util.logging.Logger;
 
@@ -167,7 +166,9 @@ public class AttributionTest {
         "[::1]:25565, [::1]",
         "[::1], [::1]",
         "192.168.1.1:19132, 192.168.1.1",
-        "tiktok.pivot.gg:25565, tiktok.pivot.gg"
+        "tiktok.pivot.gg:25565, tiktok.pivot.gg",
+        "2001:db8::1, 2001:db8::1",
+        "::1, ::1"
     })
     public void testStripPortVariants(String input, String expected) {
         assertEquals(expected, HostnameDetector.stripPort(input));
