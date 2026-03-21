@@ -48,6 +48,9 @@ public class EventCollector {
     private final Queue<PlayerEventData> playerEvents = new ConcurrentLinkedQueue<>();
     private final Queue<PerformanceEventData> performanceEvents = new ConcurrentLinkedQueue<>();
     private final Queue<ServerEventData> serverEvents = new ConcurrentLinkedQueue<>();
+    private final Queue<JsonObject> profilingEvents = new ConcurrentLinkedQueue<>();
+
+    private ApiClient apiClient;
 
     // ⚡ Bolt Optimization: Reuse MessageDigest to prevent object instantiation overhead during async flush
     private static final ThreadLocal<MessageDigest> SHA256_DIGEST = ThreadLocal.withInitial(() -> {
@@ -95,6 +98,7 @@ public class EventCollector {
         }
 
         this.httpClient = httpClient;
+        this.apiClient = new ApiClient(plugin, httpClient);
     }
 
     /**
@@ -114,6 +118,14 @@ public class EventCollector {
      * is disabled to prevent authentication errors.
      * </p>
      */
+    public void addProfilingEvent(JsonObject event) {
+        profilingEvents.add(event);
+    }
+
+    public int getProfilingEventCount() {
+        return profilingEvents.size();
+    }
+
     public void reload() {
         String trimmedKey = plugin.getApiKey();
 
@@ -125,6 +137,7 @@ public class EventCollector {
         } else {
             this.apiKey = trimmedKey;
         }
+        if (this.apiClient != null) this.apiClient.reload();
     }
 
     /**
@@ -234,11 +247,11 @@ public class EventCollector {
 
         // Send synchronously
         try {
-            sendToAPISync(payload.toString());
+            apiClient.sendToAPISync(payload.toString());
         } catch (IOException e) {
             // SECURITY: Redact sensitive info (API key) from exception message
             String errorMsg = e.getMessage() != null ? e.getMessage() : "Unknown error";
-            logger.warning("Failed to send SERVER_STOP event: " + redactSensitiveInfo(errorMsg, this.apiKey));
+            logger.warning("Failed to send SERVER_STOP event: " + ApiClient.redactSensitiveInfo(errorMsg, this.apiKey));
         }
     }
 
@@ -284,7 +297,7 @@ public class EventCollector {
         }
 
         // ⚡ Bolt Optimization: Early return if queues empty to avoid allocations
-        if (playerEvents.isEmpty() && performanceEvents.isEmpty() && serverEvents.isEmpty() && tickProfileEvent == null) {
+        if (playerEvents.isEmpty() && performanceEvents.isEmpty() && serverEvents.isEmpty() && tickProfileEvent == null && profilingEvents.isEmpty()) {
             if (debugEnabled) {
                 logger.info("No events to send");
             }
@@ -349,12 +362,18 @@ public class EventCollector {
             serverArray.add(event);
         }
 
+        JsonArray profilingArray = new JsonArray();
+        JsonObject pe;
+        while ((pe = profilingEvents.poll()) != null) {
+            profilingArray.add(pe);
+        }
+
         if (debugEnabled) {
             logger.info("Events to send - Player: " + playerArray.size() + ", Performance: " + perfArray.size() + ", Server: " + serverArray.size());
         }
 
         // Nothing to send (double check)
-        if (playerArray.size() == 0 && perfArray.size() == 0 && serverArray.size() == 0 && tickProfileEvent == null) {
+        if (playerArray.size() == 0 && perfArray.size() == 0 && serverArray.size() == 0 && tickProfileEvent == null && profilingArray.size() == 0) {
             return;
         }
 
@@ -364,6 +383,10 @@ public class EventCollector {
         payload.add("player_events", playerArray);
         payload.add("performance_events", perfArray);
         payload.add("server_events", serverArray);
+
+        if (profilingArray.size() > 0) {
+            payload.add("profiling_events", profilingArray);
+        }
 
         if (tickProfileEvent != null) {
              JsonArray tpArray = new JsonArray();
@@ -380,7 +403,11 @@ public class EventCollector {
         }
 
         // Send to API
-        sendToAPI(json);
+        apiClient.sendToAPI(json);
+    }
+
+    public ApiClient getApiClient() {
+        return apiClient;
     }
 
     /**
@@ -391,181 +418,6 @@ public class EventCollector {
      *
      * @param json The JSON payload to send.
      * @return The built {@link Request} object, or {@code null} if validation fails.
-     */
-    private Request buildRequest(String json) {
-        String apiEndpoint = plugin.getApiEndpoint();
-
-        if (apiEndpoint == null || apiKey == null) {
-            logger.warning("API endpoint or key not configured. Skipping event send.");
-            return null;
-        }
-
-        // SECURITY: Final check for HTTPS before sending
-        if (!apiEndpoint.startsWith("https://")) {
-            logger.severe("Security check failed: API endpoint must use HTTPS. Event dropped.");
-            return null;
-        }
-
-        RequestBody body = RequestBody.create(
-                json,
-                MediaType.parse("application/json"));
-
-        return new Request.Builder()
-                .url(apiEndpoint)
-                .addHeader("X-API-Key", apiKey)
-                .addHeader("Content-Type", "application/json")
-                .post(body)
-                .build();
-    }
-
-    /**
-     * Send JSON payload to API endpoint asynchronously.
-     *
-     * @param json The JSON payload.
-     */
-    private void sendToAPI(String json) {
-        sendToAPI(json, 1);
-    }
-
-    /**
-     * Send JSON payload to API endpoint asynchronously with retry logic.
-     */
-    private void sendToAPI(String json, int attempt) {
-        Request request = buildRequest(json);
-        if (request == null) return;
-
-        httpClient.newCall(request).enqueue(new Callback() {
-            @Override
-            public void onFailure(Call call, IOException e) {
-                // SECURITY: Retrieve API key to ensure redaction (using request header)
-                String usedApiKey = call.request().header("X-API-Key");
-                String errorMsg = e.getMessage() != null ? e.getMessage() : "Unknown error";
-
-                // SECURITY: Redact sensitive info (API key and regex pattern) from exception message
-                errorMsg = redactSensitiveInfo(errorMsg, usedApiKey);
-
-                logger.warning("Failed to send events: " + errorMsg);
-
-                if (plugin.getConfig().getBoolean("debug.enabled", false)) {
-                    logger.warning("Network error details: " + e.getClass().getSimpleName());
-                }
-
-                if (attempt <= 3) {
-                    long delayTicks = attempt == 1 ? 100L : attempt == 2 ? 300L : 900L;
-                    if (plugin.isEnabled()) {
-                        logger.info("Retrying batch send in " + (delayTicks / 20) + "s (Attempt " + (attempt + 1) + "/4)");
-                        org.bukkit.Bukkit.getScheduler().runTaskLaterAsynchronously(plugin, () -> sendToAPI(json, attempt + 1), delayTicks);
-                    }
-                }
-            }
-
-            @Override
-            public void onResponse(Call call, Response response) {
-                try {
-                    String usedApiKey = call.request().header("X-API-Key");
-                    if (response.isSuccessful()) {
-                        String apiVersion = response.header("X-API-Version");
-                        logger.info("Connected to Pivot API version: " + apiVersion);
-                        String responseBody = response.body() != null ? response.body().string() : "no body";
-                        logger.info("Successfully sent events: " + redactSensitiveInfo(responseBody, usedApiKey));
-                    } else {
-                        String errorBody = response.body() != null ? response.body().string() : "no error details";
-
-                        // SECURITY: Redact API key from error logs if it appears in the response
-                        errorBody = redactSensitiveInfo(errorBody, usedApiKey);
-
-                        logger.warning("Failed to send events: " + response.code() + " - " + errorBody);
-
-                        // Specific error handling
-                        if (response.code() == 401) {
-                            logger.severe("Authentication failed! Check your API key in config.yml");
-                            logger.severe("Make sure your API key starts with 'pvt_'");
-                        } else if (response.code() == 429) {
-                            logger.warning("Rate limit exceeded.");
-                        } else if (response.code() == 400) {
-                            logger.severe("Invalid request data. Enable debug mode for details.");
-                        }
-
-                        if (response.code() != 401 && response.code() != 400 && attempt <= 3) {
-                            long delayTicks = attempt == 1 ? 100L : attempt == 2 ? 300L : 900L;
-                            if (plugin.isEnabled()) {
-                                logger.info("Retrying batch send in " + (delayTicks / 20) + "s (Attempt " + (attempt + 1) + "/4)");
-                                org.bukkit.Bukkit.getScheduler().runTaskLaterAsynchronously(plugin, () -> sendToAPI(json, attempt + 1), delayTicks);
-                            }
-                        }
-                    }
-                } catch (IOException e) {
-                    logger.warning("Failed to read response: " + e.getMessage());
-                } finally {
-                    response.close();
-                }
-            }
-        });
-    }
-
-    /**
-     * Send JSON payload to API endpoint synchronously.
-     * <p>
-     * Used only for critical events (like SERVER_STOP) where we cannot rely on async execution.
-     * </p>
-     *
-     * @param json The JSON payload.
-     * @throws IOException If the network request fails.
-     */
-    private void sendToAPISync(String json) throws IOException {
-        Request request = buildRequest(json);
-        if (request == null) return;
-
-        String usedApiKey = request.header("X-API-Key");
-
-        try (Response response = httpClient.newCall(request).execute()) {
-            if (response.isSuccessful()) {
-                String apiVersion = response.header("X-API-Version");
-                logger.info("Connected to Pivot API version: " + apiVersion);
-                String responseBody = response.body() != null ? response.body().string() : "no body";
-                logger.info("Successfully sent events: " + redactSensitiveInfo(responseBody, usedApiKey));
-            } else {
-                String errorBody = response.body() != null ? response.body().string() : "no error details";
-                logger.warning("Failed to send events: " + response.code() + " - " + redactSensitiveInfo(errorBody, usedApiKey));
-            }
-        }
-    }
-
-    /**
-     * Redact sensitive information (API keys) from logs.
-     * <p>
-     * Scrubs both the specific API key used and any pattern resembling an API key
-     * to prevent leaks in stack traces or error messages.
-     * </p>
-     *
-     * @param text   The text to sanitize.
-     * @param apiKey The specific API key known to be in use (optional).
-     * @return The sanitized text with keys replaced by {@code [REDACTED]} or {@code pvt_***}.
-     */
-    private String redactSensitiveInfo(String text, String apiKey) {
-        if (text == null) return "null";
-        String redacted = text;
-
-        // Redact specific key if known
-        if (apiKey != null && !apiKey.isEmpty()) {
-            redacted = redacted.replace(apiKey, "[REDACTED]");
-        }
-
-        // SECURITY: Defense in Depth - Redact any pattern resembling an API key
-        // Matches "pvt_" followed by at least 10 alphanumeric/underscore characters
-        redacted = redacted.replaceAll("pvt_[a-zA-Z0-9_]{10,}", "pvt_***");
-
-        return redacted;
-    }
-
-    /**
-     * Redact PII (UUIDs, names, hostnames) from JSON payload for debug logging.
-     * <p>
-     * Ensures user privacy when {@code debug.log-batches} is enabled.
-     * </p>
-     *
-     * @param json The raw JSON payload string.
-     * @return A string representation of the JSON with PII fields replaced by {@code [REDACTED]}.
      */
     private String redactPii(String json) {
         try {

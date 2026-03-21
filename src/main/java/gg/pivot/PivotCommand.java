@@ -87,88 +87,43 @@ public class PivotCommand implements CommandExecutor, TabCompleter {
      * @return {@code true} indicating the command was handled successfully.
      */
     private boolean handleStatus(CommandSender sender) {
-        sender.sendMessage(ChatColor.GOLD + "========== Pivot Analytics Status ==========");
-
-        // Configuration status
         String apiKey = plugin.getConfig().getString("api.key", "");
         boolean configured = !apiKey.isEmpty() && !apiKey.equals("paste_your_key_here");
 
-        String displayKey;
-        if (configured) {
-            // SECURITY: Mask API key to prevent exposure while allowing verification
-            // Only show partial key if it meets minimum length requirements (20 chars)
-            if (apiKey.length() >= 20) {
-                displayKey = apiKey.substring(0, 4) + "***" + apiKey.substring(apiKey.length() - 4);
-            } else {
-                displayKey = "Configured (Invalid/Hidden)";
-            }
-        } else {
-            displayKey = ChatColor.RED + "NOT SET";
+        long lastSent = plugin.getEventCollector().getApiClient().getLastSuccessfulSendAt();
+        boolean connected = configured && lastSent > 0 && (System.currentTimeMillis() - lastSent <= 90000);
+        String status = connected ? "CONNECTED" : "DISCONNECTED";
+
+        String serverId = plugin.getConfig().getString("api.server-id", "");
+        if (serverId == null || serverId.isEmpty()) serverId = "unknown";
+
+        String timeAgo = "Never";
+        if (lastSent > 0) {
+            long secondsAgo = (System.currentTimeMillis() - lastSent) / 1000;
+            if (secondsAgo < 0) secondsAgo = 0;
+            timeAgo = secondsAgo + "s ago";
         }
 
-        sender.sendMessage(ChatColor.AQUA + "Configuration:");
-        sender.sendMessage("  " + (configured ? ChatColor.GREEN + "✓" : ChatColor.RED + "✗")
-                + ChatColor.WHITE + " API Key: " + ChatColor.GRAY + displayKey);
+        int playerQueue = plugin.getEventCollector().getPlayerEventCount();
+        int profilingQueue = plugin.getEventCollector().getProfilingEventCount();
+
+        String tpsMode = plugin.getConfig().getString("profiling.mode", "auto");
+        boolean tpsEnabled = plugin.getConfig().getBoolean("profiling.enabled", true);
+        String tpsStatus = tpsEnabled ? "enabled (" + tpsMode + ")" : "disabled";
+
+        boolean chunkEnabled = plugin.getConfig().getBoolean("profiling.chunk_profiling.enabled", true);
+        boolean commandEnabled = plugin.getConfig().getBoolean("profiling.command_profiling.enabled", true);
 
         String endpoint = plugin.getConfig().getString("api.endpoint", "not set");
-        sender.sendMessage("  " + ChatColor.WHITE + "Endpoint: " + ChatColor.GRAY + endpoint);
 
-        // Collection status
-        boolean collectionEnabled = plugin.getConfig().getBoolean("collection.enabled", true);
-        sender.sendMessage(ChatColor.AQUA + "Collection:");
-        sender.sendMessage("  " + (collectionEnabled ? ChatColor.GREEN + "✓" : ChatColor.YELLOW + "⚠")
-                + ChatColor.WHITE + " Status: "
-                + (collectionEnabled ? ChatColor.GREEN + "Enabled" : ChatColor.YELLOW + "Disabled"));
-
-        if (collectionEnabled) {
-            // Event statistics
-            int playerEventCount = plugin.getEventCollector().getPlayerEventCount();
-            int perfEventCount = plugin.getEventCollector().getPerformanceEventCount();
-
-            sender.sendMessage("  " + ChatColor.WHITE + "Queued Events:");
-            sender.sendMessage("    " + ChatColor.GRAY + "Player: " + ChatColor.WHITE + playerEventCount);
-            sender.sendMessage("    " + ChatColor.GRAY + "Performance: " + ChatColor.WHITE + perfEventCount);
-
-            // Last event sent
-            long lastEventTime = plugin.getLastEventSentTime();
-            if (lastEventTime > 0) {
-                long secondsAgo = (System.currentTimeMillis() - lastEventTime) / 1000;
-                String timeAgo = formatTimeAgo(secondsAgo);
-
-                boolean isHealthy = secondsAgo < 120; // Healthy if sent within 2 minutes
-                sender.sendMessage("  " + (isHealthy ? ChatColor.GREEN + "✓" : ChatColor.YELLOW + "⚠")
-                        + ChatColor.WHITE + " Last Sent: " + ChatColor.GRAY + timeAgo);
-            } else {
-                sender.sendMessage("  " + ChatColor.YELLOW + "⚠" + ChatColor.WHITE
-                        + " Last Sent: " + ChatColor.GRAY + "Never");
-            }
-        }
-
-        // Server performance
-        sender.sendMessage(ChatColor.AQUA + "Server Performance:");
-        double tps = TPSUtil.getTPS();
-        ChatColor tpsColor = tps >= 19.5 ? ChatColor.GREEN : (tps >= 15.0 ? ChatColor.YELLOW : ChatColor.RED);
-        sender.sendMessage("  " + ChatColor.WHITE + "TPS: " + tpsColor + String.format("%.2f", tps)
-                + ChatColor.GRAY + " (" + TPSUtil.getTPSInfo() + ")");
-        sender.sendMessage("  " + ChatColor.WHITE + "Online Players: " + ChatColor.GRAY
-                + plugin.getServer().getOnlinePlayers().size());
-
-        // Privacy settings
-        boolean anonymize = plugin.getConfig().getBoolean("privacy.anonymize-players", false);
-        boolean trackHostnames = plugin.getConfig().getBoolean("privacy.track-hostnames", true);
-        sender.sendMessage(ChatColor.AQUA + "Privacy:");
-        sender.sendMessage("  " + ChatColor.WHITE + "Anonymize Players: "
-                + (anonymize ? ChatColor.YELLOW + "Yes" : ChatColor.GREEN + "No"));
-        sender.sendMessage("  " + ChatColor.WHITE + "Track Hostnames: "
-                + (trackHostnames ? ChatColor.GREEN + "Yes" : ChatColor.YELLOW + "No"));
-
-        // Debug status
-        boolean debug = plugin.getConfig().getBoolean("debug.enabled", false);
-        sender.sendMessage(ChatColor.AQUA + "Debug:");
-        sender.sendMessage("  " + ChatColor.WHITE + "Mode: "
-                + (debug ? ChatColor.YELLOW + "Enabled" : ChatColor.GRAY + "Disabled"));
-
-        sender.sendMessage(ChatColor.GOLD + "==========================================");
+        sender.sendMessage("[Pivot] Status: " + status);
+        sender.sendMessage("[Pivot] Server ID: " + serverId);
+        sender.sendMessage("[Pivot] Last batch sent: " + timeAgo);
+        sender.sendMessage("[Pivot] Events in queue: " + playerQueue + " player, " + profilingQueue + " profiling");
+        sender.sendMessage("[Pivot] TPS Profiler: " + tpsStatus);
+        sender.sendMessage("[Pivot] Chunk Profiler: " + (chunkEnabled ? "enabled" : "disabled"));
+        sender.sendMessage("[Pivot] Command Profiler: " + (commandEnabled ? "enabled" : "disabled"));
+        sender.sendMessage("[Pivot] API endpoint: " + endpoint);
 
         return true;
     }

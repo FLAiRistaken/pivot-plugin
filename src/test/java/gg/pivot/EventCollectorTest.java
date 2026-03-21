@@ -52,21 +52,21 @@ public class EventCollectorTest {
 
         EventCollector collector = new EventCollector(plugin);
 
-        Method redactMethod = EventCollector.class.getDeclaredMethod("redactSensitiveInfo", String.class, String.class);
+        Method redactMethod = ApiClient.class.getDeclaredMethod("redactSensitiveInfo", String.class, String.class);
         redactMethod.setAccessible(true);
 
         String apiKey = "pvt_secret1234567890";
 
         // Test 1: Specific API key redaction
         String message = "Failed to connect to https://api.pivotmc.dev/v1/ingest?key=pvt_secret1234567890";
-        String redacted = (String) redactMethod.invoke(collector, message, apiKey);
+        String redacted = (String) redactMethod.invoke(null, message, apiKey);
         assertEquals("Failed to connect to https://api.pivotmc.dev/v1/ingest?key=[REDACTED]", redacted, "Should redact specific API key");
 
         // Test 2: Generic pattern redaction (Defense in Depth)
         // This asserts the behavior I plan to implement (redacting pvt_... tokens)
         String otherKey = "pvt_othersecret12345";
         String message2 = "Another key leaked: pvt_othersecret12345 in the wild";
-        String redacted2 = (String) redactMethod.invoke(collector, message2, apiKey);
+        String redacted2 = (String) redactMethod.invoke(null, message2, apiKey);
 
         // Note: The regex I plan is pvt_[a-zA-Z0-9_]{10,} -> pvt_***
         // pvt_othersecret12345 is > 10 chars.
@@ -75,7 +75,7 @@ public class EventCollectorTest {
         // Test 3: Short pvt_ tokens (might be false positives, e.g. pvt_ltd)
         // If I use {10,} it should skip short ones.
         String safeMessage = "This is pvt_ltd company";
-        String redacted3 = (String) redactMethod.invoke(collector, safeMessage, apiKey);
+        String redacted3 = (String) redactMethod.invoke(null, safeMessage, apiKey);
         assertEquals(safeMessage, redacted3, "Should NOT redact short pvt_ tokens");
     }
 
