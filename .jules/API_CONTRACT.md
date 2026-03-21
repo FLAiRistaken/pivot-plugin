@@ -325,6 +325,58 @@ Reset password using token from email.
 
 ---
 
+#### `POST /v1/auth/verify-email`
+
+Verify email address using token from verification email.
+
+**Request Body:**
+```json
+{
+  "token": "verification_token_string"
+}
+```
+
+**Success Response (200 OK):**
+```json
+{
+  "success": true,
+  "message": "Email verified successfully"
+}
+```
+*Note: Returns `{ "success": true, "message": "Email already verified" }` when the email was already verified. Clients SHOULD NOT rely on a single fixed message value and MUST use the `success` flag for control flow.*
+
+**Error Responses:**
+- `400 Bad Request`: Invalid verification token or token expired
+
+---
+
+#### `POST /v1/auth/resend-verification`
+
+Resend verification email to authenticated user.
+
+**Authentication:** Required (JWT)
+
+**Rate Limit:** 3/hour
+
+**Request Body:**
+None
+
+**Success Response (200 OK):**
+```json
+{
+  "success": true,
+  "message": "Verification email sent"
+}
+```
+- `success` (boolean): Indicates the request completed successfully.
+- `message` (string): Human-readable status message. Common values include:
+  - `"Verification email sent"` – a new verification email was sent.
+  - `"Email already verified"` – the user's email was already verified; no new email was sent.
+
+*Note: When the email is already verified, this endpoint returns `{ "success": true, "message": "Email already verified" }`. Clients SHOULD NOT rely on a single fixed message value and MUST use the `success` flag for control flow.*
+
+---
+
 ### Server Management Endpoints
 
 #### `POST /v1/servers`
@@ -812,22 +864,22 @@ X-API-Key: pvt_uP1JM4bRsoizE-sgBIlVu1458F9VKqmnwebxktAUHAQ
     {
       "event_type": "TICK_PROFILE",
       "timestamp": 1735398000000,
-      "sample_duration_seconds": 60,
+      "sample_duration_seconds": 300,
       "server_tps": 19.8,
-      "server_version": "git-Paper-1.20.1",
-      "total_plugins": 12,
-      "profiling_mode": "custom_spigot",
+      "server_version": "git-Paper-123 (MC: 1.20.4)",
+      "total_plugins": 45,
+      "profiling_mode": "paper_timings",
       "plugins": [
         {
-          "name": "ExamplePlugin",
-          "version": "unknown",
-          "avg_tick_time_ms": 0.15,
-          "max_tick_time_ms": 1.2,
-          "total_time_ms": 540.0,
-          "percentage_of_tick": 0.9,
-          "sample_count": 3600,
+          "name": "HeavyPlugin",
+          "version": "1.2.3",
+          "avg_tick_time_ms": 15.4,
+          "max_tick_time_ms": 45.2,
+          "total_time_ms": 1540.0,
+          "percentage_of_tick": 30.8,
+          "sample_count": 1200,
           "event_count": 0,
-          "task_count": 3
+          "task_count": 0
         }
       ]
     }
@@ -850,7 +902,6 @@ X-API-Key: pvt_uP1JM4bRsoizE-sgBIlVu1458F9VKqmnwebxktAUHAQ
 **ServerEvent:**
 - `timestamp` (int): Unix timestamp in milliseconds
 - `event_type` (string): `"SERVER_START"` or `"SERVER_STOP"`
-- `reason` (string, optional): Shutdown reason, present on `SERVER_STOP` (e.g. `"manual"`)
 
 **PerformanceEvent:**
 - `timestamp` (int): Unix timestamp in milliseconds
@@ -858,23 +909,14 @@ X-API-Key: pvt_uP1JM4bRsoizE-sgBIlVu1458F9VKqmnwebxktAUHAQ
 - `player_count` (int): Online player count at sample time
 
 **TickProfileEvent:**
-- `event_type` (string): Always `"TICK_PROFILE"`
 - `timestamp` (int): Unix timestamp in milliseconds
-- `sample_duration_seconds` (int): How many seconds the sample covers
-- `server_tps` (float): Server TPS at time of collection
+- `event_type` (string): `"TICK_PROFILE"`
+- `profiling_mode` (string): `"paper_timings"` or `"custom_spigot"`
+- `sample_duration_seconds` (int): Duration of the profiling sample
+- `server_tps` (float): Server TPS during the sample
 - `server_version` (string): Server version string
-- `total_plugins` (int): Number of plugins loaded
-- `profiling_mode` (string): One of `paper_timings`, `custom_spigot`, or `disabled (…)`
-- `plugins` (array): Per-plugin timing breakdown; each entry contains:
-  - `name` (string): Plugin name (or opaque SHA-256 prefix when anonymised)
-  - `version` (string): Plugin version (may be `"unknown"`)
-  - `avg_tick_time_ms` (float): Average execution time per task invocation (ms)
-  - `max_tick_time_ms` (float): Worst-case single execution time (ms)
-  - `total_time_ms` (float): Sum of all execution times in the window (ms)
-  - `percentage_of_tick` (float): Percentage of the profiling window's wall-clock time consumed by this plugin (0–100)
-  - `sample_count` (int): Number of task invocations recorded
-  - `event_count` (int): Event handlers counted (0 in Spigot mode)
-  - `task_count` (int): Distinct Bukkit task IDs seen
+- `total_plugins` (int): Total number of plugins profiled
+- `plugins` (list): List of profiled plugin data
 
 **Timestamp Validation:**
 - Must be positive integer
@@ -889,6 +931,8 @@ X-API-Key: pvt_uP1JM4bRsoizE-sgBIlVu1458F9VKqmnwebxktAUHAQ
   "events_processed": 3
 }
 ```
+
+> **Note:** `events_processed` counts each created `Event` row (player/server/performance events) **plus** one entry per plugin in each `tick_profile_events` item (each plugin generates a `PluginProfile` row and increments this counter). The example value of `3` above reflects only player/server/performance events; a payload that also includes `tick_profile_events` with N plugins would yield a higher count.
 
 **Error Responses:**
 - `401 Unauthorized`: Invalid API key
@@ -1019,7 +1063,7 @@ GET /v1/analytics/servers/f86dfb9d-f74e-40dd-8c62-4c53833d1477/performance-summa
 
 ---
 
-### `GET /v1/analytics/servers/{server_id}/comparison`
+#### `GET /v1/analytics/servers/{server_id}/comparison`
 
 Compare two time periods for performance metrics (e.g., this week vs last week).
 
@@ -1768,6 +1812,90 @@ Soft delete user account.
 - `400 VALIDATION_ERROR` – User has an active or trialing subscription (must cancel first)
 - `401 UNAUTHORIZED` – Incorrect password
 
+#### `GET /v1/users/me/integrations`
+
+Get Discord and Slack webhook integrations.
+
+**Authentication:** Required (JWT)
+
+**Success Response (200 OK):**
+```json
+{
+  "discord_webhook_url": "https://discord.com/api/webhooks/***",
+  "slack_webhook_url": "https://hooks.slack.com/services/***",
+  "updated_at": "2026-01-08T10:00:00Z"
+}
+```
+
+---
+
+#### `PATCH /v1/users/me/integrations`
+
+Update Discord and/or Slack webhook URLs.
+
+**Authentication:** Required (JWT)
+
+**Request Body:**
+```json
+{
+  "discord_webhook_url": "https://discord.com/api/webhooks/12345/abcde",
+  "slack_webhook_url": "https://hooks.slack.com/services/T0000/B0000/C0000"
+}
+```
+*Both fields are optional. Null can be passed to clear the webhook.*
+
+**Field Validation:**
+- `discord_webhook_url`: Must start with `https://discord.com/api/webhooks/`
+- `slack_webhook_url`: Must start with `https://hooks.slack.com/services/`
+
+**Success Response (200 OK):** Returns updated integration object with masked URLs.
+
+---
+
+#### `POST /v1/users/me/integrations/discord/test`
+
+Test the configured Discord webhook.
+
+**Authentication:** Required (JWT)
+**Subscription Tier:** Pro or Elite required
+
+**Rate Limit:** 5/hour
+
+**Success Response (200 OK):**
+```json
+{
+  "success": true,
+  "message": "Test message sent."
+}
+```
+
+**Error Responses:**
+- `400 VALIDATION_ERROR` – No Discord webhook URL configured.
+- `503 SERVICE_UNAVAILABLE` – Discord returned an error (e.g., invalid URL).
+
+---
+
+#### `POST /v1/users/me/integrations/slack/test`
+
+Test the configured Slack webhook.
+
+**Authentication:** Required (JWT)
+**Subscription Tier:** Pro or Elite required
+
+**Rate Limit:** 5/hour
+
+**Success Response (200 OK):**
+```json
+{
+  "success": true,
+  "message": "Test message sent."
+}
+```
+
+**Error Responses:**
+- `400 VALIDATION_ERROR` – No Slack webhook URL configured.
+- `503 SERVICE_UNAVAILABLE` – Slack returned an error (e.g., invalid URL).
+
 ---
 
 
@@ -1864,6 +1992,99 @@ Get current subscription status and usage.
   "data_retention_days": 7
 }
 ```
+
+---
+
+### Tick Profiler Endpoints
+
+#### `GET /v1/analytics/servers/{server_id}/tick-profiling`
+
+Get aggregated tick profiling data for a server.
+
+**Authentication:** Required (JWT)
+**Subscription Tier:** Pro or Elite required
+
+**Query Parameters:**
+- `hours` (int, default=24, max=720) - Analysis period
+
+**Success Response (200 OK):**
+```json
+{
+  "server_id": "uuid",
+  "server_name": "My Server",
+  "period_hours": 24,
+  "profiling_mode": "paper_timings",
+  "total_profiled_plugins": 45,
+  "last_profile_at": "2023-10-27T10:00:00Z",
+  "worst_offenders": [
+    {
+      "plugin_name": "HeavyPlugin",
+      "plugin_version": "1.2.3",
+      "avg_tick_time_ms": 15.4,
+      "max_tick_time_ms": 45.2,
+      "percentage_of_tick": 30.8,
+      "sample_count": 1200,
+      "trend": "degrading"
+    }
+  ]
+}
+```
+
+**Error Responses:**
+- `403 UPGRADE_REQUIRED` - Feature not available on Free tier
+
+---
+
+#### `GET /v1/analytics/servers/{server_id}/plugin-history/{plugin_name}`
+
+Get historical performance data for a specific plugin.
+
+**Authentication:** Required (JWT)
+**Subscription Tier:** Pro or Elite required
+
+**Query Parameters:**
+- `hours` (int, default=168, max=720) - Analysis period
+
+**Success Response (200 OK):**
+```json
+{
+  "server_id": "uuid",
+  "server_name": "My Server",
+  "plugin_name": "HeavyPlugin",
+  "period_hours": 168,
+  "data_points": [
+    {
+      "time": "2023-10-20T10:00:00Z",
+      "avg_tick_time_ms": 12.5,
+      "max_tick_time_ms": 30.1,
+      "server_tps": 19.8
+    }
+  ]
+}
+```
+
+---
+
+#### `GET /v1/plugins/{plugin_name}/benchmark`
+
+Get community benchmark data for a plugin.
+
+**Authentication:** Required (JWT)
+
+**Success Response (200 OK):**
+```json
+{
+  "plugin_name": "EssentialsX",
+  "community_avg_tick_time_ms": 0.45,
+  "community_p50_tick_time_ms": 0.42,
+  "community_p95_tick_time_ms": 1.2,
+  "server_count": 1240,
+  "last_updated": "2023-10-27T02:00:00Z",
+  "data_available": true
+}
+```
+
+**Note:** Returns `data_available: false` if fewer than 10 servers have reported this plugin.
 
 ---
 
@@ -1995,6 +2216,70 @@ Get current subscription status and usage.
 
 ---
 
+### TickProfilePluginData
+
+```typescript
+{
+  name: string
+  version: string | null
+  avg_tick_time_ms: float
+  max_tick_time_ms: float
+  total_time_ms: float
+  percentage_of_tick: float
+  sample_count: int
+  event_count: int  // Optional, default: 0
+  task_count: int  // Optional, default: 0
+}
+```
+
+---
+
+### PluginProfile (DB Model)
+
+```typescript
+{
+  // Composite primary key: (id, recorded_at)
+  id: UUID
+  server_id: UUID
+  recorded_at: DateTime
+  plugin_name: string
+  plugin_version: string | null
+  avg_tick_time_ms: float
+  max_tick_time_ms: float
+  total_time_ms: float
+  percentage_of_tick: float
+  sample_count: int
+  event_count: int
+  task_count: int
+  server_tps: float
+  profiling_mode: string
+  sample_duration_seconds: int
+  server_version: string
+}
+```
+
+---
+
+### PluginBenchmark (DB Model)
+
+```typescript
+{
+  id: UUID
+  plugin_name: string
+  plugin_version: string | null
+  benchmark_date: Date
+  avg_tick_time_ms: float
+  p50_tick_time_ms: float | null
+  p95_tick_time_ms: float | null
+  max_tick_time_ms: float | null
+  server_count: int
+  sample_count: int
+  updated_at: DateTime
+}
+```
+
+---
+
 ## Example Integration Flows
 
 ### 1. New User Onboarding
@@ -2104,6 +2389,11 @@ Get current subscription status and usage.
 ---
 
 ## Changelog
+
+**v1.5.0 (2026-02-21)**
+- Added Tick Profiler endpoints (`/v1/analytics/servers/{id}/tick-profiling`, `/plugin-history/{name}`)
+- Added Community Benchmarks endpoint (`/v1/plugins/{name}/benchmark`)
+- Added profiling configuration to `setup` endpoint output
 
 **v1.4.1 (2026-02-18)**
 - Added `DELETE /v1/users/me/account` for soft account deletion

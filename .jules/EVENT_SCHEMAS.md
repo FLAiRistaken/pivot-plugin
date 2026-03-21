@@ -541,6 +541,114 @@ INSERT INTO events (
 
 ---
 
+## Commands and Profiling Events (v2.0.0)
+
+### CHUNK_PROFILE
+
+**Category:** Performance Profiling
+**Frequency:** Every 30 seconds (same batch window as `TICK_PROFILE`)
+**Tier Gate:** Pro
+
+#### Purpose
+Captures per-plugin time cost during ChunkLoadEvent and ChunkUnloadEvent handlers over a
+30-second sample window. Catches lag that is invisible to tick profiling — WorldGuard,
+GriefPrevention, and CoreProtect are common offenders on chunk events.
+
+#### Payload Schema
+
+```json
+{
+  "type": "CHUNK_PROFILE",
+  "timestamp": "2026-03-14T17:00:00Z",
+  "sample_duration_seconds": 30,
+  "chunks_loaded": 45,
+  "chunks_unloaded": 38,
+  "plugins": [
+    {
+      "name": "WorldGuard",
+      "version": "7.0.9",
+      "avg_load_time_ms": 2.3,
+      "max_load_time_ms": 15.7,
+      "total_load_events": 45,
+      "avg_unload_time_ms": 0.8,
+      "max_unload_time_ms": 3.2,
+      "total_unload_events": 38
+    }
+  ]
+}
+```
+
+#### Field Validation
+
+| Field                         | Type    | Required | Validation                                           |
+| ----------------------------- | ------- | -------- | ---------------------------------------------------- |
+| type                          | string  | Yes      | Must be exactly CHUNK_PROFILE                        |
+| timestamp                     | string  | Yes      | ISO 8601 UTC                                         |
+| sample_duration_seconds       | integer | Yes      | Must be 30 (matches batch window)                    |
+| chunks_loaded                 | integer | Yes      | ≥ 0                                                  |
+| chunks_unloaded               | integer | Yes      | ≥ 0                                                  |
+| plugins                       | array   | Yes      | Can be empty [] if no plugins intercept chunk events |
+| plugins[].name                | string  | Yes      | 1–64 chars                                           |
+| plugins[].version             | string  | Yes      | 1–32 chars                                           |
+| plugins[].avg_load_time_ms    | float   | Yes      | ≥ 0.0                                                |
+| plugins[].max_load_time_ms    | float   | Yes      | ≥ avg_load_time_ms                                   |
+| plugins[].total_load_events   | integer | Yes      | ≥ 0; equals parent chunks_loaded                     |
+| plugins[].avg_unload_time_ms  | float   | Yes      | ≥ 0.0                                                |
+| plugins[].max_unload_time_ms  | float   | Yes      | ≥ avg_unload_time_ms                                 |
+| plugins[].total_unload_events | integer | Yes      | ≥ 0; equals parent chunks_unloaded                   |
+
+#### Rules & Details
+- `plugins` array may be empty if no plugins listen to ChunkLoadEvent/ChunkUnloadEvent.
+- Only include plugins that actually registered listeners for the relevant events.
+- Omit unload fields if plugin has no ChunkUnloadEvent listener.
+- Zero-overhead plugins (< 0.01ms avg) MAY be omitted.
+- Plugin will disable ChunkProfiler if avg measurement overhead exceeds 0.5ms per chunk event (configurable: `profiling.chunk_profiling.overhead_threshold_ms: 0.5`).
+
+
+### SLOW_COMMAND
+
+**Category:** Command Analysis
+**Frequency:** Per-occurrence (emitted immediately when duration > threshold)
+**Tier Gate:** Pro
+
+> Events are queued in `EventCollector` and flushed with the next 30-second batch window — not sent as individual HTTP requests.
+
+#### Purpose
+Emitted when a player command takes longer than the configured threshold (default 100ms) to
+complete. Enables correlation of specific commands with TPS drops and player churn.
+Command arguments are NEVER captured — only the command name/prefix (privacy requirement).
+
+#### Payload Schema
+
+```json
+{
+  "type": "SLOW_COMMAND",
+  "timestamp": "2026-03-14T17:00:00Z",
+  "command": "//set",
+  "executor_plugin": "WorldEdit",
+  "duration_ms": 5234,
+  "player_uuid": "069a79f4-44e9-4726-a5be-fca90e38aaf5",
+  "server_tps_during": 12.3,
+  "players_online": 45
+}
+```
+
+#### Field Validation
+
+| Field | Type | Required | Validation |
+|-------|------|----------|------------|
+| type | string | Yes | Must be exactly SLOW_COMMAND |
+| timestamp | string | Yes | ISO 8601 UTC - when command completed |
+| command | string | Yes | Command label only — NO arguments |
+| executor_plugin | string | Yes | Plugin that owns the command, or "unknown" |
+| duration_ms | integer | Yes | ≥ 100 |
+| player_uuid | string | Yes | Valid UUID v4 with hyphens |
+| server_tps_during | float | Yes | 0.0–20.0; TPS at command **start** time |
+| players_online | integer | Yes | ≥ 0 |
+
+
+---
+
 ## Validation Rules
 
 ### Field-Level Validation

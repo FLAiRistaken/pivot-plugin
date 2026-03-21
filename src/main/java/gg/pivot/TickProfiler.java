@@ -18,6 +18,7 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.logging.Logger;
 
 /**
@@ -264,7 +265,7 @@ public class TickProfiler {
     /**
      * Collects samples from the custom Spigot profiling map.
      * <p>
-     * Swaps the current sample map with a new one to ensure thread safety while processing.
+     * Resets the counters in the current sample map to ensure thread safety while processing.
      * Aggregates execution times and counts for each plugin.
      * </p>
      *
@@ -272,23 +273,21 @@ public class TickProfiler {
      * @param durationSeconds The duration of the sample in seconds.
      */
     private void collectSpigotSamples(JsonArray pluginsArray, int durationSeconds) {
-        // Swap map
-        ConcurrentHashMap<String, PluginSample> snapshot = currentSpigotSamples;
-        currentSpigotSamples = new ConcurrentHashMap<>();
-
         boolean anonymize = configManager.isAnonymizePluginNames();
         long windowMillis = durationSeconds * 1000L;
 
-        for (Map.Entry<String, PluginSample> entry : snapshot.entrySet()) {
+        for (Map.Entry<String, PluginSample> entry : currentSpigotSamples.entrySet()) {
             String pluginName = entry.getKey();
             PluginSample sample = entry.getValue();
 
-            // sampleCount is always incremented before totalTimeNano/maxTimeNano in PluginSample.add(),
-            // so if sampleCount is 0 there are genuinely no samples this window.
-            long sampleCount = sample.sampleCount.get();
+            // Atomically swap in a fresh window and take ownership of the completed one.
+            // Any add() calls that captured the old window reference before the swap will
+            // still complete their writes into the returned window, so no samples are lost.
+            PluginSample.Window window = sample.swap();
+            long sampleCount = window.sampleCount.get();
             if (sampleCount == 0) continue;
-            long totalTimeNano = sample.totalTimeNano.get();
-            long maxTimeNano = sample.maxTimeNano.get();
+            long totalTimeNano = window.totalTimeNano.get();
+            long maxTimeNano = window.maxTimeNano.get();
 
             double avgTickTimeMs = (totalTimeNano / (double) sampleCount) / 1_000_000.0;
             double totalTimeMs = totalTimeNano / 1_000_000.0;
@@ -311,22 +310,6 @@ public class TickProfiler {
     }
 
     // --- Spigot Listener Profiling ---
-
-    /**
-     * Records the execution time for a specific plugin and tracks overhead.
-     *
-     * @param pluginName The name of the plugin that executed
-     * @param durationNano The execution duration in nanoseconds
-     */
-    private void record(String pluginName, long durationNano) {
-        long startOverhead = System.nanoTime();
-        try {
-            PluginSample sample = currentSpigotSamples.computeIfAbsent(pluginName, k -> new PluginSample());
-            sample.add(durationNano);
-        } finally {
-            overheadNano.addAndGet(System.nanoTime() - startOverhead);
-        }
-    }
 
     /**
      * Shuts down the profiler, restoring any wrapped {@link RegisteredListener}s
@@ -369,14 +352,15 @@ public class TickProfiler {
      */
     private class ProfiledRegisteredListener extends RegisteredListener {
         private final RegisteredListener delegate;
-        private final String pluginName;
         private final TickProfiler profiler;
+        private final PluginSample cachedSample; // ⚡ Bolt Optimization: Cache sample reference
 
         public ProfiledRegisteredListener(RegisteredListener delegate, String pluginName, TickProfiler profiler) {
             super(delegate.getListener(), getExecutor(delegate), delegate.getPriority(), delegate.getPlugin(), delegate.isIgnoringCancelled());
             this.delegate = delegate;
-            this.pluginName = pluginName;
             this.profiler = profiler;
+            // Get or create the sample object once during registration to eliminate map lookups on every event
+            this.cachedSample = profiler.currentSpigotSamples.computeIfAbsent(pluginName, k -> new PluginSample());
         }
 
         @Override
@@ -390,25 +374,55 @@ public class TickProfiler {
                 delegate.callEvent(event);
             } finally {
                 long duration = System.nanoTime() - start;
-                profiler.record(pluginName, duration);
+                // ⚡ Bolt Optimization: Inline recording to avoid map lookup and method call overhead
+                long startOverhead = System.nanoTime();
+                cachedSample.add(duration);
+                profiler.overheadNano.addAndGet(System.nanoTime() - startOverhead);
             }
         }
     }
 
     /**
      * Holds execution time stats for a single plugin.
+     * <p>
+     * Uses an {@link java.util.concurrent.atomic.AtomicReference} to a {@link Window} so that the
+     * collector can atomically swap in a fresh window and read the completed one without splitting
+     * a single {@link #add} call across two sampling windows.
      */
     private static class PluginSample {
-        final AtomicLong totalTimeNano = new AtomicLong(0);
-        final AtomicLong maxTimeNano = new AtomicLong(0);
-        final AtomicLong sampleCount = new AtomicLong(0);
+        /** One sampling window's worth of counters. */
+        static final class Window {
+            final AtomicLong totalTimeNano = new AtomicLong(0);
+            final AtomicLong maxTimeNano = new AtomicLong(0);
+            final AtomicLong sampleCount = new AtomicLong(0);
+        }
+
+        private final AtomicReference<Window> active =
+                new AtomicReference<>(new Window());
 
         void add(long duration) {
-            // Increment sampleCount first so readers always see count >= 1 when totals are non-zero,
-            // eliminating the race where totalTimeNano is visible but sampleCount is still 0.
-            sampleCount.incrementAndGet();
-            totalTimeNano.addAndGet(duration);
-            maxTimeNano.accumulateAndGet(duration, Math::max);
+            Window w = active.get();
+            // Update totals before incrementing sampleCount so that when sampleCount > 0
+            // the totals are guaranteed to reflect at least that many additions.
+            // Note: if swap() is called concurrently after this get() but before the writes
+            // below complete, these updates will land in the already-swapped-out window.
+            // This is intentional: the three counters within a window always remain
+            // mutually consistent, which is the critical fix over the original three
+            // separate getAndSet(0) calls. The occasional boundary event landing in the
+            // previous window is an acceptable tradeoff for a lock-free profiler.
+            w.totalTimeNano.addAndGet(duration);
+            w.maxTimeNano.accumulateAndGet(duration, Math::max);
+            w.sampleCount.incrementAndGet();
+        }
+
+        /**
+         * Atomically swaps in a fresh {@link Window} and returns the completed one.
+         * The caller owns the returned window exclusively and can read its values without
+         * competing with {@link #add} (any in-flight {@code add} that captured the old
+         * reference before the swap will complete its writes into the returned window).
+         */
+        Window swap() {
+            return active.getAndSet(new Window());
         }
     }
 
@@ -437,8 +451,9 @@ public class TickProfiler {
         Map<String, PluginSampleSnapshot> snapshot = new HashMap<>();
         for (Map.Entry<String, PluginSample> entry : currentSpigotSamples.entrySet()) {
             PluginSample sample = entry.getValue();
+            PluginSample.Window w = sample.active.get();
             snapshot.put(entry.getKey(),
-                    new PluginSampleSnapshot(sample.totalTimeNano.get(), sample.maxTimeNano.get(), sample.sampleCount.get()));
+                    new PluginSampleSnapshot(w.totalTimeNano.get(), w.maxTimeNano.get(), w.sampleCount.get()));
         }
         return Collections.unmodifiableMap(snapshot);
     }

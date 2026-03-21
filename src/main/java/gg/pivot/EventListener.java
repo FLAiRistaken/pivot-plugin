@@ -64,7 +64,8 @@ public class EventListener implements Listener {
             return;
         }
 
-        String hostname = event.getHostname();
+        String rawHostname = event.getHostname();
+        String hostname = gg.pivot.util.HostnameDetector.detectHostname(rawHostname, plugin);
         UUID playerId = event.getPlayer().getUniqueId();
 
         if (hostname != null && !hostname.isEmpty()) {
