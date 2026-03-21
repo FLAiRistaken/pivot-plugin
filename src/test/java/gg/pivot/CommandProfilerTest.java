@@ -7,9 +7,8 @@ import org.bukkit.event.player.PlayerCommandPreprocessEvent;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import java.lang.reflect.Field;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -18,6 +17,7 @@ public class CommandProfilerTest {
     private PivotPlugin plugin;
     private EventCollector eventCollector;
     private FileConfiguration config;
+    private AtomicLong fakeClock;
     private CommandProfiler profiler;
 
     @BeforeEach
@@ -36,20 +36,21 @@ public class CommandProfilerTest {
         isPaperField.setAccessible(true);
         isPaperField.set(null, false);
 
-
         plugin = mock(PivotPlugin.class);
         eventCollector = mock(EventCollector.class);
         config = mock(FileConfiguration.class);
 
         doReturn(config).when(plugin).getConfig();
-        doReturn(true).when(config).getBoolean("profiling.command_profiling.enabled", true);
+        doReturn(true).when(config).getBoolean("profiling.enabled", true);
+        doReturn(true).when(config).getBoolean("profiling.command_profiling.enabled", false);
         doReturn(100.0).when(config).getDouble("profiling.command_profiling.slow_threshold_ms", 100.0);
 
-        profiler = new CommandProfiler(plugin, eventCollector);
+        fakeClock = new AtomicLong(0L);
+        profiler = new CommandProfiler(plugin, eventCollector, fakeClock::get);
     }
 
     @Test
-    public void testSlowCommand() throws Exception {
+    public void testSlowCommand() {
         Player player = mock(Player.class);
         UUID uuid = UUID.randomUUID();
         doReturn(uuid).when(player).getUniqueId();
@@ -59,26 +60,18 @@ public class CommandProfilerTest {
 
         PlayerCommandPreprocessEvent event = new PlayerCommandPreprocessEvent(player, "/set args");
 
+        fakeClock.set(0L);
         profiler.onCommandStart(event);
 
-        // Modify timing to be 101ms ago
-        Field timingsField = CommandProfiler.class.getDeclaredField("activeTimings");
-        timingsField.setAccessible(true);
-        @SuppressWarnings("unchecked")
-        ConcurrentHashMap<UUID, Object> timings = (ConcurrentHashMap<UUID, Object>) timingsField.get(profiler);
-
-        Object timing = timings.get(uuid);
-        Field startNanosField = timing.getClass().getDeclaredField("startNanos");
-        startNanosField.setAccessible(true);
-        startNanosField.set(timing, System.nanoTime() - 101_000_000L);
-
+        // Advance clock by 101 ms
+        fakeClock.set(101_000_000L);
         profiler.onCommandEnd(event);
 
         verify(eventCollector, times(1)).addProfilingEvent(any(JsonObject.class));
     }
 
     @Test
-    public void testFastCommand() throws Exception {
+    public void testFastCommand() {
         Player player = mock(Player.class);
         UUID uuid = UUID.randomUUID();
         doReturn(uuid).when(player).getUniqueId();
@@ -88,8 +81,9 @@ public class CommandProfilerTest {
 
         PlayerCommandPreprocessEvent event = new PlayerCommandPreprocessEvent(player, "/set args");
 
+        fakeClock.set(0L);
         profiler.onCommandStart(event);
-        // It's instantaneous
+        // Clock unchanged – 0 ms elapsed, well below threshold
         profiler.onCommandEnd(event);
 
         verify(eventCollector, never()).addProfilingEvent(any(JsonObject.class));

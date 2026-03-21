@@ -130,9 +130,6 @@ public class PivotPlugin extends JavaPlugin {
         if (tickProfiler != null) {
             tickProfiler.shutdown();
         }
-        if (chunkProfiler != null) {
-            chunkProfiler.disable();
-        }
         if (commandProfiler != null) {
             commandProfiler.disable();
         }
@@ -153,8 +150,11 @@ public class PivotPlugin extends JavaPlugin {
         // Flush any remaining events
         if (eventCollector != null) {
             logger.info("Flushing remaining events before shutdown...");
-            if (chunkProfiler != null) chunkProfiler.flushAndReset();
-                eventCollector.flush();
+            if (chunkProfiler != null) {
+                chunkProfiler.flushAndReset();
+                chunkProfiler.disable();
+            }
+            eventCollector.flush();
         }
 
         logger.info("Pivot Analytics disabled. Goodbye!");
