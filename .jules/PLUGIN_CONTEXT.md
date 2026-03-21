@@ -247,7 +247,7 @@ The `TickProfiler` implements a hybrid strategy to measure plugin performance im
 
 1.  **Paper Mode (`paper_timings`)**:
     *   Detects the presence of Timings v2 classes (e.g. `co.aikar.timings.TimingsManager`) for environment awareness only.
-    *   Currently delegates sampling to the same custom listener-wrapping implementation as **Spigot Mode** (Paper sampling still uses the `custom_spigot` path).
+    *   Currently delegates sampling to the same custom listener-wrapping implementation as **Spigot Mode** (Paper sampling still uses the `custom_spigot` path). This fallback is in place because full Paper Timings v2 collection is not yet natively implemented.
 
 2.  **Spigot Mode (`custom_spigot`)**:
     *   Used on Spigot/CraftBukkit servers or when configured as `custom_only`.
@@ -257,8 +257,11 @@ The `TickProfiler` implements a hybrid strategy to measure plugin performance im
     *   **Lock-Free Updates:** Uses `AtomicLong` for storing plugin performance metrics (`totalTimeNano`, `maxTimeNano`, `sampleCount`) to allow lock-free updates and reads without blocking the main thread.
 
 3.  **Configuration**:
+    *   `profiling.mode` controls the backend selection (`auto`, `paper_only`, `custom_only`).
+    *   `profiling.privacy.anonymize_plugin_names` allows hashing plugin names via SHA-256 for privacy.
+    *   `profiling.performance` settings allow configuring max overhead and auto-disable thresholds to preserve server performance.
     *   Controlled via `profiling` section in `config.yml`.
-    *   Supports `auto`, `paper_only`, and `custom_only` modes. To disable profiling entirely, set `profiling.enabled: false`.
+    *   To disable profiling entirely, set `profiling.enabled: false`.
 
 ---
 

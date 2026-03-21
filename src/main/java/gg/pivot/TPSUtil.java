@@ -142,6 +142,8 @@ public class TPSUtil {
      * Get current server TPS.
      * <p>
      * Returns the 1-minute average TPS from the most accurate source available.
+     * Tries the Paper API first (cleanest), falls back to Spigot's internal
+     * NMS Reflection, and finally uses manual calculation measuring tick duration.
      * </p>
      *
      * @return TPS (capped at 20.0).
