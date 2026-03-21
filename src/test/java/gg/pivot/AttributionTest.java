@@ -7,9 +7,10 @@ import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerLoginEvent;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.mockito.ArgumentCaptor;
 
-import java.net.InetAddress;
 import java.util.UUID;
 import java.util.logging.Logger;
 
@@ -75,6 +76,32 @@ public class AttributionTest {
     }
 
     @Test
+    public void testHostnamePortIsStripped() {
+        // Bukkit may return "host:port" from PlayerLoginEvent#getHostname()
+        PlayerLoginEvent loginEvent = mock(PlayerLoginEvent.class);
+        doReturn(player).when(loginEvent).getPlayer();
+        doReturn("tiktok.pivot.gg:25565").when(loginEvent).getHostname();
+
+        listener.onPlayerLogin(loginEvent);
+
+        PlayerJoinEvent joinEvent = new PlayerJoinEvent(player, "Joined");
+        listener.onPlayerJoin(joinEvent);
+
+        ArgumentCaptor<String> hostnameCaptor = ArgumentCaptor.forClass(String.class);
+        verify(eventCollector).addPlayerEvent(
+                eq("PLAYER_JOIN"),
+                eq(playerId.toString()),
+                eq("TestPlayer"),
+                hostnameCaptor.capture(),
+                isNull(),
+                isNull(),
+                anyString()
+        );
+
+        assertEquals("tiktok.pivot.gg", hostnameCaptor.getValue(), "Port should be stripped from virtual host");
+    }
+
+    @Test
     public void testHostnameFallbackToConfigDefault() {
         // Mock a login event with null virtual host
         PlayerLoginEvent loginEvent = mock(PlayerLoginEvent.class);
@@ -130,5 +157,20 @@ public class AttributionTest {
         );
 
         assertEquals("play.pivot.gg", hostnameCaptor.getValue(), "Hostname should fallback to configured default when empty");
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+        "example.com:25565, example.com",
+        "example.com, example.com",
+        "[::1]:25565, [::1]",
+        "[::1], [::1]",
+        "192.168.1.1:19132, 192.168.1.1",
+        "tiktok.pivot.gg:25565, tiktok.pivot.gg",
+        "2001:db8::1, 2001:db8::1",
+        "::1, ::1"
+    })
+    public void testStripPortVariants(String input, String expected) {
+        assertEquals(expected, HostnameDetector.stripPort(input));
     }
 }

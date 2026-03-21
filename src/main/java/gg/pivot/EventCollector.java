@@ -451,18 +451,11 @@ public class EventCollector {
 
                 if (attempt <= 3) {
                     long delayTicks = attempt == 1 ? 100L : attempt == 2 ? 300L : 900L;
-                    logger.info("Retrying batch send in " + (delayTicks / 20) + "s (Attempt " + (attempt + 1) + "/4)");
-                    org.bukkit.Bukkit.getScheduler().runTaskLaterAsynchronously(plugin, () -> sendToAPI(json, attempt + 1), delayTicks);
+                    if (plugin.isEnabled()) {
+                        logger.info("Retrying batch send in " + (delayTicks / 20) + "s (Attempt " + (attempt + 1) + "/4)");
+                        org.bukkit.Bukkit.getScheduler().runTaskLaterAsynchronously(plugin, () -> sendToAPI(json, attempt + 1), delayTicks);
+                    }
                 }
-
-
-
-
-
-
-
-
-
             }
 
             @Override
@@ -494,8 +487,10 @@ public class EventCollector {
 
                         if (response.code() != 401 && response.code() != 400 && attempt <= 3) {
                             long delayTicks = attempt == 1 ? 100L : attempt == 2 ? 300L : 900L;
-                            logger.info("Retrying batch send in " + (delayTicks / 20) + "s (Attempt " + (attempt + 1) + "/4)");
-                            org.bukkit.Bukkit.getScheduler().runTaskLaterAsynchronously(plugin, () -> sendToAPI(json, attempt + 1), delayTicks);
+                            if (plugin.isEnabled()) {
+                                logger.info("Retrying batch send in " + (delayTicks / 20) + "s (Attempt " + (attempt + 1) + "/4)");
+                                org.bukkit.Bukkit.getScheduler().runTaskLaterAsynchronously(plugin, () -> sendToAPI(json, attempt + 1), delayTicks);
+                            }
                         }
                     }
                 } catch (IOException e) {
