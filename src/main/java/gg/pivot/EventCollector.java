@@ -438,14 +438,33 @@ public class EventCollector {
      */
     private void sendToAPI(String json, int attempt) {
         // Skip top-level sends while a retry chain is already active to prevent multiple
-        // overlapping retry chains from piling up during an outage.
-        if (attempt == 1 && retryPending.get()) {
-            logger.warning("Skipping batch send: a retry chain is already pending.");
+        // overlapping retry chains from piling up during an outage. Acquire the flag atomically
+        // before enqueuing the HTTP call.
+        if (attempt == 1) {
+            if (!retryPending.compareAndSet(false, true)) {
+                logger.warning("Skipping batch send: a retry chain is already pending.");
+                return;
+            }
+        } else {
+            // Ensure the flag stays raised for in-progress retry chains.
+            retryPending.set(true);
+        }
+
+        Request request;
+        try {
+            request = buildRequest(json);
+        } catch (Exception e) {
+            logger.warning("Failed to build request for events: " + e.getMessage());
+            retryPending.set(false);
             return;
         }
 
-        Request request = buildRequest(json);
-        if (request == null) return;
+        if (request == null) {
+            // If we cannot build a request (e.g., bad config or insecure endpoint),
+            // ensure any pending retry chain is cleared so future sends are not suppressed.
+            retryPending.set(false);
+            return;
+        }
 
         httpClient.newCall(request).enqueue(new Callback() {
             @Override

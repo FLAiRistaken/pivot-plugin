@@ -284,10 +284,16 @@ public class TickProfiler {
             // Any add() calls that captured the old window reference before the swap will
             // still complete their writes into the returned window, so no samples are lost.
             PluginSample.Window window = sample.swap();
-            long sampleCount = window.sampleCount.get();
-            if (sampleCount == 0) continue;
             long totalTimeNano = window.totalTimeNano.get();
             long maxTimeNano = window.maxTimeNano.get();
+            long sampleCount = window.sampleCount.get();
+            if (sampleCount == 0) continue;
+            // If sampleCount was incremented before the totals were written, re-read totals once
+            // to avoid reporting a transient zero snapshot.
+            if (totalTimeNano == 0 && maxTimeNano == 0) {
+                totalTimeNano = window.totalTimeNano.get();
+                maxTimeNano = window.maxTimeNano.get();
+            }
 
             double avgTickTimeMs = (totalTimeNano / (double) sampleCount) / 1_000_000.0;
             double totalTimeMs = totalTimeNano / 1_000_000.0;
