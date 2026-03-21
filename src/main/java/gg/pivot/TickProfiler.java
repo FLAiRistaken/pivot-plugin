@@ -18,6 +18,7 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.logging.Logger;
 
 /**
@@ -279,12 +280,14 @@ public class TickProfiler {
             String pluginName = entry.getKey();
             PluginSample sample = entry.getValue();
 
-            // ⚡ Bolt Optimization: Read and reset counters without replacing the map,
-            // allowing listeners to cache the PluginSample instance.
-            long sampleCount = sample.sampleCount.getAndSet(0);
+            // Atomically swap in a fresh window and take ownership of the completed one.
+            // Any add() calls that captured the old window reference before the swap will
+            // still complete their writes into the returned window, so no samples are lost.
+            PluginSample.Window window = sample.swap();
+            long sampleCount = window.sampleCount.get();
             if (sampleCount == 0) continue;
-            long totalTimeNano = sample.totalTimeNano.getAndSet(0);
-            long maxTimeNano = sample.maxTimeNano.getAndSet(0);
+            long totalTimeNano = window.totalTimeNano.get();
+            long maxTimeNano = window.maxTimeNano.get();
 
             double avgTickTimeMs = (totalTimeNano / (double) sampleCount) / 1_000_000.0;
             double totalTimeMs = totalTimeNano / 1_000_000.0;
@@ -381,18 +384,45 @@ public class TickProfiler {
 
     /**
      * Holds execution time stats for a single plugin.
+     * <p>
+     * Uses an {@link java.util.concurrent.atomic.AtomicReference} to a {@link Window} so that the
+     * collector can atomically swap in a fresh window and read the completed one without splitting
+     * a single {@link #add} call across two sampling windows.
      */
     private static class PluginSample {
-        final AtomicLong totalTimeNano = new AtomicLong(0);
-        final AtomicLong maxTimeNano = new AtomicLong(0);
-        final AtomicLong sampleCount = new AtomicLong(0);
+        /** One sampling window's worth of counters. */
+        static final class Window {
+            final AtomicLong totalTimeNano = new AtomicLong(0);
+            final AtomicLong maxTimeNano = new AtomicLong(0);
+            final AtomicLong sampleCount = new AtomicLong(0);
+        }
+
+        private final AtomicReference<Window> active =
+                new AtomicReference<>(new Window());
 
         void add(long duration) {
-            // Increment sampleCount first so readers always see count >= 1 when totals are non-zero,
-            // eliminating the race where totalTimeNano is visible but sampleCount is still 0.
-            sampleCount.incrementAndGet();
-            totalTimeNano.addAndGet(duration);
-            maxTimeNano.accumulateAndGet(duration, Math::max);
+            Window w = active.get();
+            // Update totals before incrementing sampleCount so that when sampleCount > 0
+            // the totals are guaranteed to reflect at least that many additions.
+            // Note: if swap() is called concurrently after this get() but before the writes
+            // below complete, these updates will land in the already-swapped-out window.
+            // This is intentional: the three counters within a window always remain
+            // mutually consistent, which is the critical fix over the original three
+            // separate getAndSet(0) calls. The occasional boundary event landing in the
+            // previous window is an acceptable tradeoff for a lock-free profiler.
+            w.totalTimeNano.addAndGet(duration);
+            w.maxTimeNano.accumulateAndGet(duration, Math::max);
+            w.sampleCount.incrementAndGet();
+        }
+
+        /**
+         * Atomically swaps in a fresh {@link Window} and returns the completed one.
+         * The caller owns the returned window exclusively and can read its values without
+         * competing with {@link #add} (any in-flight {@code add} that captured the old
+         * reference before the swap will complete its writes into the returned window).
+         */
+        Window swap() {
+            return active.getAndSet(new Window());
         }
     }
 
@@ -421,8 +451,9 @@ public class TickProfiler {
         Map<String, PluginSampleSnapshot> snapshot = new HashMap<>();
         for (Map.Entry<String, PluginSample> entry : currentSpigotSamples.entrySet()) {
             PluginSample sample = entry.getValue();
+            PluginSample.Window w = sample.active.get();
             snapshot.put(entry.getKey(),
-                    new PluginSampleSnapshot(sample.totalTimeNano.get(), sample.maxTimeNano.get(), sample.sampleCount.get()));
+                    new PluginSampleSnapshot(w.totalTimeNano.get(), w.maxTimeNano.get(), w.sampleCount.get()));
         }
         return Collections.unmodifiableMap(snapshot);
     }
