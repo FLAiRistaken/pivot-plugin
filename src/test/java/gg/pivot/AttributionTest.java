@@ -15,6 +15,7 @@ import java.util.UUID;
 import java.util.logging.Logger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.Mockito.*;
 
 public class AttributionTest {
@@ -172,5 +173,10 @@ public class AttributionTest {
     })
     public void testStripPortVariants(String input, String expected) {
         assertEquals(expected, HostnameDetector.stripPort(input));
+    }
+
+    @Test
+    public void testStripPortNull() {
+        assertNull(HostnameDetector.stripPort(null), "stripPort(null) should return null, not throw NPE");
     }
 }

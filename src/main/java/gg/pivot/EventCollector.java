@@ -15,6 +15,7 @@ import java.util.Objects;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.logging.Logger;
 
 /**
@@ -48,6 +49,11 @@ public class EventCollector {
     private final Queue<PlayerEventData> playerEvents = new ConcurrentLinkedQueue<>();
     private final Queue<PerformanceEventData> performanceEvents = new ConcurrentLinkedQueue<>();
     private final Queue<ServerEventData> serverEvents = new ConcurrentLinkedQueue<>();
+
+    // Prevents multiple concurrent retry chains from stacking when the API is unreachable.
+    // A top-level send (attempt == 1) is skipped when a retry chain is already active,
+    // avoiding log spam and amplified load during outages.
+    private final AtomicBoolean retryPending = new AtomicBoolean(false);
 
     // ⚡ Bolt Optimization: Reuse MessageDigest to prevent object instantiation overhead during async flush
     private static final ThreadLocal<MessageDigest> SHA256_DIGEST = ThreadLocal.withInitial(() -> {
@@ -431,8 +437,34 @@ public class EventCollector {
      * Send JSON payload to API endpoint asynchronously with retry logic.
      */
     private void sendToAPI(String json, int attempt) {
-        Request request = buildRequest(json);
-        if (request == null) return;
+        // Skip top-level sends while a retry chain is already active to prevent multiple
+        // overlapping retry chains from piling up during an outage. Acquire the flag atomically
+        // before enqueuing the HTTP call.
+        if (attempt == 1) {
+            if (!retryPending.compareAndSet(false, true)) {
+                logger.warning("Skipping batch send: a retry chain is already pending.");
+                return;
+            }
+        } else {
+            // Ensure the flag stays raised for in-progress retry chains.
+            retryPending.set(true);
+        }
+
+        Request request;
+        try {
+            request = buildRequest(json);
+        } catch (Exception e) {
+            logger.warning("Failed to build request for events: " + e.getMessage());
+            retryPending.set(false);
+            return;
+        }
+
+        if (request == null) {
+            // If we cannot build a request (e.g., bad config or insecure endpoint),
+            // ensure any pending retry chain is cleared so future sends are not suppressed.
+            retryPending.set(false);
+            return;
+        }
 
         httpClient.newCall(request).enqueue(new Callback() {
             @Override
@@ -454,8 +486,13 @@ public class EventCollector {
                     long delayTicks = attempt == 1 ? 100L : attempt == 2 ? 300L : 900L;
                     if (plugin.isEnabled()) {
                         logger.info("Retrying batch send in " + (delayTicks / 20) + "s (Attempt " + (attempt + 1) + "/4)");
+                        retryPending.set(true);
                         org.bukkit.Bukkit.getScheduler().runTaskLaterAsynchronously(plugin, () -> sendToAPI(json, attempt + 1), delayTicks);
+                    } else {
+                        retryPending.set(false);
                     }
+                } else {
+                    retryPending.set(false);
                 }
             }
 
@@ -464,6 +501,7 @@ public class EventCollector {
                 try {
                     String usedApiKey = call.request().header("X-API-Key");
                     if (response.isSuccessful()) {
+                        retryPending.set(false);
                         String apiVersion = response.header("X-API-Version");
                         logger.info("Connected to Pivot API version: " + apiVersion);
                         String responseBody = response.body() != null ? response.body().string() : "no body";
@@ -490,8 +528,13 @@ public class EventCollector {
                             long delayTicks = attempt == 1 ? 100L : attempt == 2 ? 300L : 900L;
                             if (plugin.isEnabled()) {
                                 logger.info("Retrying batch send in " + (delayTicks / 20) + "s (Attempt " + (attempt + 1) + "/4)");
+                                retryPending.set(true);
                                 org.bukkit.Bukkit.getScheduler().runTaskLaterAsynchronously(plugin, () -> sendToAPI(json, attempt + 1), delayTicks);
+                            } else {
+                                retryPending.set(false);
                             }
+                        } else {
+                            retryPending.set(false);
                         }
                     }
                 } catch (IOException e) {

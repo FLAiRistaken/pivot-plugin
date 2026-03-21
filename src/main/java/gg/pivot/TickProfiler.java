@@ -284,10 +284,16 @@ public class TickProfiler {
             // Any add() calls that captured the old window reference before the swap will
             // still complete their writes into the returned window, so no samples are lost.
             PluginSample.Window window = sample.swap();
-            long sampleCount = window.sampleCount.get();
-            if (sampleCount == 0) continue;
             long totalTimeNano = window.totalTimeNano.get();
             long maxTimeNano = window.maxTimeNano.get();
+            long sampleCount = window.sampleCount.get();
+            if (sampleCount == 0) continue;
+            // If sampleCount was incremented before the totals were written, re-read totals once
+            // to avoid reporting a transient zero snapshot.
+            if (totalTimeNano == 0 && maxTimeNano == 0) {
+                totalTimeNano = window.totalTimeNano.get();
+                maxTimeNano = window.maxTimeNano.get();
+            }
 
             double avgTickTimeMs = (totalTimeNano / (double) sampleCount) / 1_000_000.0;
             double totalTimeMs = totalTimeNano / 1_000_000.0;
@@ -402,17 +408,14 @@ public class TickProfiler {
 
         void add(long duration) {
             Window w = active.get();
-            // Update totals before incrementing sampleCount so that when sampleCount > 0
-            // the totals are guaranteed to reflect at least that many additions.
-            // Note: if swap() is called concurrently after this get() but before the writes
-            // below complete, these updates will land in the already-swapped-out window.
-            // This is intentional: the three counters within a window always remain
-            // mutually consistent, which is the critical fix over the original three
-            // separate getAndSet(0) calls. The occasional boundary event landing in the
-            // previous window is an acceptable tradeoff for a lock-free profiler.
+            // Increment sampleCount first so that a collector which checks sampleCount
+            // as a gate will not skip a window after time has been recorded. With this
+            // ordering, a concurrent collector may briefly see sampleCount > 0 while the
+            // totals lag behind by one in-flight update, but it will never see
+            // totalTimeNano/maxTimeNano updated while sampleCount is still 0.
+            w.sampleCount.incrementAndGet();
             w.totalTimeNano.addAndGet(duration);
             w.maxTimeNano.accumulateAndGet(duration, Math::max);
-            w.sampleCount.incrementAndGet();
         }
 
         /**
