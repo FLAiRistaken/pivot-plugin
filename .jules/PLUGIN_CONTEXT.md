@@ -261,7 +261,7 @@ The `TickProfiler` implements a hybrid strategy to measure plugin performance im
     *   `profiling.privacy.anonymize_plugin_names` allows hashing plugin names via SHA-256 for privacy.
     *   `profiling.performance` settings allow configuring max overhead and auto-disable thresholds to preserve server performance.
     *   Controlled via `profiling` section in `config.yml`.
-    *   Supports `auto`, `paper_only`, and `custom_only` modes. To disable profiling entirely, set `profiling.enabled: false`.
+    *   To disable profiling entirely, set `profiling.enabled: false`.
 
 ---
 
