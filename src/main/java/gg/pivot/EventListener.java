@@ -24,7 +24,7 @@ import java.util.UUID;
  *   <li>PlayerJoinEvent: To record player joins and attribute them to hostnames.</li>
  *   <li>PlayerQuitEvent: To record player quits and clean up caches.</li>
  * </ul>
- * </p>
+
  */
 public class EventListener implements Listener {
     private final PivotPlugin plugin;
@@ -53,7 +53,7 @@ public class EventListener implements Listener {
      * Uses {@code EventPriority.MONITOR} and {@code ignoreCancelled = true} to ensure
      * we only capture data from successful logins and avoid conflicts with other plugins
      * (especially on Paper servers which warn about non-MONITOR listeners on this event).
-     * </p>
+
      *
      * @param event The PlayerLoginEvent
      */

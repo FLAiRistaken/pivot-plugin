@@ -31,7 +31,9 @@ pivot-plugin/
 │   │   │   ├── PivotCommand.java         # Command handler (/pivot status, reload, etc.)
 │   │   │   ├── TPSUtil.java              # Cross-version TPS detection
 │   │   │   ├── TickProfiler.java         # Plugin performance profiling
-│   │   │   └── ConfigManager.java        # Configuration access and defaults
+│   │   │   ├── ConfigManager.java        # Configuration access and defaults
+│   │   │   └── util/
+│   │   │       └── HostnameDetector.java # Hostname extraction from virtual host
 │   │   └── resources/
 │   │       ├── config.yml                # User configuration (API key, intervals)
 │   │       └── plugin.yml                # Plugin metadata
@@ -449,6 +451,11 @@ Supports 1.7.10+ including modded servers.
 - `isProfilingEnabled()`: Check if profiling is enabled
 - `getProfilingMode()`: Get profiling mode (auto/paper/custom)
 - `getMaxOverheadMs()`: Get performance safety limits
+
+### HostnameDetector.java
+**Purpose:** Hostname extraction and formatting
+- `detectHostname()`: Safely extracts bare hostname, falls back to config default
+- `stripPort()`: Removes port suffixes and handles IPv6 formatting
 
 ---
 

@@ -48,7 +48,7 @@ public class ConfigManager {
      *   <li>{@code custom_only} - Always use the standard custom profiling backend, even when running on Paper.</li>
      * </ul>
      * To disable profiling entirely, set {@code profiling.enabled: false} in config.
-     * </p>
+
      *
      * @return The profiling mode string (default: "auto").
      */

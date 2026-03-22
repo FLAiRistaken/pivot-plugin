@@ -20,16 +20,22 @@ import java.util.logging.Logger;
  *   <li>Spigot Reflection ({@code MinecraftServer.recentTps}) - Access internal server fields</li>
  *   <li>Manual Calculation - Fallback that measures tick duration (works on all versions)</li>
  * </ol>
- * </p>
+
  * <p>
  * <b>Bolt Optimizations:</b>
  * <ul>
  *   <li>Caches {@code MinecraftServer} instance to avoid repeated reflection lookups.</li>
  *   <li>Calculates TPS lazily on demand (in {@code getTPS()}) rather than every tick to minimize main thread impact.</li>
  * </ul>
- * </p>
+
  */
 public class TPSUtil {
+
+    /**
+     * Private constructor to prevent instantiation.
+     */
+    private TPSUtil() {}
+
     private static Method paperGetTPSMethod = null;
     private static Field spigotRecentTPSField = null;
     private static Object spigotServerInstance = null; // ⚡ Bolt Optimization: Cache server instance
@@ -48,7 +54,7 @@ public class TPSUtil {
      * <p>
      * Detects available TPS methods (Paper, Spigot, or Manual) and initializes
      * cached fields to optimize performance.
-     * </p>
+
      *
      * @param plugin The plugin instance.
      * @param logger The plugin logger.
@@ -114,7 +120,7 @@ public class TPSUtil {
      * <p>
      * Records the duration of the last tick into a rolling buffer.
      * Used only when native TPS methods are unavailable.
-     * </p>
+
      */
     private static void measureTick() {
         long currentTime = System.nanoTime();
@@ -144,7 +150,7 @@ public class TPSUtil {
      * Returns the 1-minute average TPS from the most accurate source available.
      * Tries the Paper API first (cleanest), falls back to Spigot's internal
      * NMS Reflection, and finally uses manual calculation measuring tick duration.
-     * </p>
+
      *
      * @return TPS (capped at 20.0).
      * @throws IllegalStateException If called before initialization.

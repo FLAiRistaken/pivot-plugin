@@ -24,7 +24,7 @@ import java.util.logging.Logger;
  * This class uses {@link java.util.concurrent.ConcurrentLinkedQueue} to store events
  * efficiently without blocking the main server thread. Events are flushed periodically
  * by an asynchronous task in {@link PivotPlugin}.
- * </p>
+
  * <p>
  * <b>Bolt Optimizations:</b>
  * <ul>
@@ -32,7 +32,7 @@ import java.util.logging.Logger;
  *   <li>Defers heavy operations (like UUID hashing) to the async flush task.</li>
  *   <li>Drains queues directly to JSON arrays to minimize allocations.</li>
  * </ul>
- * </p>
+
  */
 public class EventCollector {
     private final PivotPlugin plugin;
@@ -68,7 +68,7 @@ public class EventCollector {
      * Initializes the EventCollector.
      * <p>
      * Sets up the OkHttpClient with strict timeouts (15s) to prevent resource exhaustion.
-     * </p>
+
      * @param plugin The main plugin instance
      */
     public EventCollector(PivotPlugin plugin) {
@@ -118,7 +118,7 @@ public class EventCollector {
      * Updates the API key from the config file. Validates the key format
      * (must start with 'pvt_' and be >= 20 chars). If invalid, the collector
      * is disabled to prevent authentication errors.
-     * </p>
+
      */
     public void reload() {
         String trimmedKey = plugin.getApiKey();
@@ -220,7 +220,7 @@ public class EventCollector {
      * <p>
      * This is called during plugin disable. It bypasses the async queue to ensure
      * the event is sent before the JVM shuts down.
-     * </p>
+
      *
      * @param reason The reason for the stop (usually "manual").
      */
@@ -254,14 +254,14 @@ public class EventCollector {
      * Drains event queues, anonymizes player data (if enabled), builds a JSON payload,
      * and sends it to the Pivot API. By collecting events in queues and flushing
      * them periodically, we batch network requests and minimize API overhead.
-     * </p>
+
      * <p>
      * <b>Threading:</b> Normally invoked by a periodic async background task, so
      * anonymization (SHA-256 hashing) and JSON construction run off the main thread.
      * However, this method is also called synchronously on the main thread from
      * {@code PivotPlugin.onDisable()} for a final drain on shutdown, so heavy work
      * may occasionally run on the main thread during that path.
-     * </p>
+
      */
     public void flush() {
         boolean debugEnabled = plugin.getConfig().getBoolean("debug.enabled", false);
@@ -393,7 +393,7 @@ public class EventCollector {
      * Builds the HTTP request for the API.
      * <p>
      * Validates configuration, enforces HTTPS, and sets the {@code X-API-Key} header.
-     * </p>
+
      *
      * @param json The JSON payload to send.
      * @return The built {@link Request} object, or {@code null} if validation fails.
@@ -550,7 +550,7 @@ public class EventCollector {
      * Send JSON payload to API endpoint synchronously.
      * <p>
      * Used only for critical events (like SERVER_STOP) where we cannot rely on async execution.
-     * </p>
+
      *
      * @param json The JSON payload.
      * @throws IOException If the network request fails.
@@ -579,7 +579,7 @@ public class EventCollector {
      * <p>
      * Scrubs both the specific API key used and any pattern resembling an API key
      * to prevent leaks in stack traces or error messages.
-     * </p>
+
      *
      * @param text   The text to sanitize.
      * @param apiKey The specific API key known to be in use (optional).
@@ -605,7 +605,7 @@ public class EventCollector {
      * Redact PII (UUIDs, names, hostnames) from JSON payload for debug logging.
      * <p>
      * Ensures user privacy when {@code debug.log-batches} is enabled.
-     * </p>
+
      *
      * @param json The raw JSON payload string.
      * @return A string representation of the JSON with PII fields replaced by {@code [REDACTED]}.

@@ -8,12 +8,21 @@ import gg.pivot.PivotPlugin;
 public class HostnameDetector {
 
     /**
+     * Private constructor to prevent instantiation of utility class.
+     */
+    private HostnameDetector() {}
+
+    /**
      * Determines the correct hostname to track, falling back to a configured default
      * if the virtual host is empty or null.
      *
      * <p>Bukkit's {@code PlayerLoginEvent#getHostname()} may return the host with a port
      * suffix (e.g. {@code "example.com:25565"} or {@code "[::1]:25565"}). This method
      * strips the port so only the bare hostname is returned.
+     *
+     * @param virtualHost the raw hostname string from the player login event
+     * @param plugin the PivotPlugin instance used to access the default configuration
+     * @return the determined hostname, with port stripped, or the configured default
      */
     public static String detectHostname(String virtualHost, PivotPlugin plugin) {
         if (virtualHost != null && !virtualHost.isEmpty()) {

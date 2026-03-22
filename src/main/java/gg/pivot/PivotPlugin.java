@@ -23,6 +23,12 @@ import java.util.logging.Logger;
  * </p>
  */
 public class PivotPlugin extends JavaPlugin {
+
+    /**
+     * Default constructor for PivotPlugin.
+     */
+    public PivotPlugin() {}
+
     private Logger logger;
     private EventCollector eventCollector;
     private BukkitTask tpsTask;
@@ -153,7 +159,7 @@ public class PivotPlugin extends JavaPlugin {
      * <li>Valid API endpoint (HTTPS required).</li>
      * <li>Sane collection intervals (batch interval > TPS interval).</li>
      * </ul>
-     * </p>
+
      *
      * @return {@code true} if configuration is valid, {@code false} otherwise.
      */
@@ -211,7 +217,7 @@ public class PivotPlugin extends JavaPlugin {
      * <p>
      * API keys are partially masked (e.g., "pvt_***1234") or fully hidden
      * to prevent leakage in server logs.
-     * </p>
+
      */
     private void logConfiguration() {
         String apiKey = getApiKey();
@@ -254,7 +260,7 @@ public class PivotPlugin extends JavaPlugin {
      * If the file is readable or writable by Group/Others, this method attempts
      * to lock permissions to {@code 600} (Owner Read/Write only) using POSIX APIs.
      * Logs a warning if the file is insecure and cannot be fixed.
-     * </p>
+
      */
     public void checkConfigPermissions() {
         File configFile = new File(getDataFolder(), "config.yml");
@@ -306,7 +312,7 @@ public class PivotPlugin extends JavaPlugin {
      * <li>Event Flushing: Batches and sends collected events to the API.</li>
      * </ul>
      * Intervals are configured in {@code config.yml}.
-     * </p>
+
      */
     private void startTasks() {
         if (!getConfig().getBoolean("collection.enabled", true)) {
@@ -384,7 +390,7 @@ public class PivotPlugin extends JavaPlugin {
      * <p>
      * Called when configuration is reloaded via {@code /pivot reload}.
      * Cancels existing tasks and starts new ones with updated intervals.
-     * </p>
+
      */
     public void restartTasks() {
         // Reload event collector configuration
@@ -436,6 +442,8 @@ public class PivotPlugin extends JavaPlugin {
     /**
      * Get the cached online player count.
      * Thread-safe and non-blocking.
+     *
+     * @return the current number of online players.
      */
     public int getOnlinePlayerCount() {
         return onlinePlayerCount.get();
@@ -461,7 +469,7 @@ public class PivotPlugin extends JavaPlugin {
      * <li>Must be at least 20 characters long</li>
      * <li>Must contain only alphanumeric characters, underscores, or hyphens</li>
      * </ul>
-     * </p>
+
      *
      * @param apiKey The API key string to validate.
      * @return {@code true} if valid, {@code false} otherwise.

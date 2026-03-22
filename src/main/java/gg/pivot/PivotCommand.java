@@ -21,7 +21,7 @@ import java.util.List;
  *   <li>/pivot debug - Toggles debug logging</li>
  *   <li>/pivot info - Shows version and TPS info</li>
  * </ul>
- * </p>
+
  */
 public class PivotCommand implements CommandExecutor, TabCompleter {
     private final PivotPlugin plugin;
@@ -81,7 +81,7 @@ public class PivotCommand implements CommandExecutor, TabCompleter {
      *   <li>Privacy and Debug settings.</li>
      * </ul>
      * API Keys are masked for security.
-     * </p>
+
      *
      * @param sender The command sender.
      * @return {@code true} indicating the command was handled successfully.
@@ -178,7 +178,7 @@ public class PivotCommand implements CommandExecutor, TabCompleter {
      * <p>
      * Reloads {@code config.yml}, validates the new configuration, and restarts
      * collection tasks with new intervals.
-     * </p>
+
      *
      * @param sender The command sender.
      * @return Always true.
@@ -227,7 +227,7 @@ public class PivotCommand implements CommandExecutor, TabCompleter {
      * Handle /pivot debug [on|off|toggle].
      * <p>
      * Toggles verbose logging in the console. Updates {@code config.yml} and saves the change.
-     * </p>
+
      *
      * @param sender The command sender.
      * @param args   Command arguments (e.g., ["debug", "on"]).
@@ -289,7 +289,7 @@ public class PivotCommand implements CommandExecutor, TabCompleter {
      * <p>
      * Displays plugin version, technical details (Java/Server version, TPS method),
      * and links to documentation/support.
-     * </p>
+
      *
      * @param sender The command sender.
      * @return Always true.
@@ -367,7 +367,7 @@ public class PivotCommand implements CommandExecutor, TabCompleter {
      * Tab completion for /pivot command.
      * <p>
      * Provides suggestions for subcommands and arguments (e.g., debug options).
-     * </p>
+
      *
      * @param sender  The command sender.
      * @param command The command being executed.
