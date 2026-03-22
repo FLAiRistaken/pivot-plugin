@@ -229,13 +229,10 @@ public class EventCollectorTest {
     @Test
     public void testRetryPendingCoalescesAndClearsOnSuccess() throws Exception {
         when(plugin.getLogger()).thenReturn(Logger.getGlobal());
-        when(plugin.getConfig()).thenReturn(config);
+        // when(plugin.getConfig()).thenReturn(config);
         when(plugin.getApiKey()).thenReturn("pvt_validkey1234567890");
-        when(config.getBoolean("debug.enabled", false)).thenReturn(false);
-        when(config.getBoolean("debug.log-batches", false)).thenReturn(false);
-        when(config.getBoolean("privacy.anonymize-players", false)).thenReturn(false);
+        // omit lenient
         when(plugin.getApiEndpoint()).thenReturn("https://api.example.com/v1/ingest");
-        when(plugin.isEnabled()).thenReturn(true);
 
         OkHttpClient mockHttpClient = mock(OkHttpClient.class);
         Call mockCall = mock(Call.class);
@@ -264,11 +261,14 @@ public class EventCollectorTest {
         Callback cb = callbackCaptor.getValue();
         assertNotNull(cb, "Callback should be captured");
         Request builtRequest = requestCaptor.getValue();
+        when(mockCall.request()).thenReturn(builtRequest);
+
         Response successResponse = new Response.Builder()
                 .code(200)
                 .protocol(Protocol.HTTP_1_1)
                 .message("OK")
                 .request(builtRequest)
+                .body(okhttp3.ResponseBody.create("{}", okhttp3.MediaType.parse("application/json")))
                 .build();
         cb.onResponse(mockCall, successResponse);
 
@@ -278,11 +278,9 @@ public class EventCollectorTest {
     @Test
     public void testRetryPendingClearedOnBuildFailure() throws Exception {
         when(plugin.getLogger()).thenReturn(Logger.getGlobal());
-        when(plugin.getConfig()).thenReturn(config);
+        // when(plugin.getConfig()).thenReturn(config);
         when(plugin.getApiKey()).thenReturn("pvt_validkey1234567890");
-        when(config.getBoolean("debug.enabled", false)).thenReturn(false);
-        when(config.getBoolean("debug.log-batches", false)).thenReturn(false);
-        when(config.getBoolean("privacy.anonymize-players", false)).thenReturn(false);
+        // Omit lenient stubbing
         // Build request will fail because endpoint is missing
         when(plugin.getApiEndpoint()).thenReturn(null);
 
