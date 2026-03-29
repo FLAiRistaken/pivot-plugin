@@ -312,6 +312,7 @@ api:
   endpoint: "https://api.pivotmc.dev/v1/ingest"
   key: "pvt_xxxxx"
   server-id: ""
+  default-hostname: "localhost" # Fallback if virtual host is missing
 
 collection:
   enabled: true

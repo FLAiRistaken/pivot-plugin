@@ -13,6 +13,9 @@ api:
   # Server ID (automatically set by dashboard-generated config)
   server-id: ""
 
+  # Default hostname fallback if a player's virtual host is missing
+  default-hostname: "localhost"
+
 # Data Collection Settings
 collection:
   # Enable/disable data collection

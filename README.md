@@ -33,6 +33,7 @@ The `config.yml` allows you to customize data collection and privacy settings.
 api:
   endpoint: "https://api.pivotmc.dev/v1/ingest"
   key: "pvt_xxxxx"
+  default-hostname: "localhost" # Fallback if a player's virtual host is missing
 
 collection:
   enabled: true
