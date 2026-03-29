@@ -379,11 +379,11 @@ public class TickProfiler {
             try {
                 delegate.callEvent(event);
             } finally {
-                long duration = System.nanoTime() - start;
-                // ⚡ Bolt Optimization: Inline recording to avoid map lookup and method call overhead
-                long startOverhead = System.nanoTime();
+                // ⚡ Bolt Optimization: Minimize System.nanoTime() calls in hot path
+                long end = System.nanoTime();
+                long duration = end - start;
                 cachedSample.add(duration);
-                profiler.overheadNano.addAndGet(System.nanoTime() - startOverhead);
+                profiler.overheadNano.addAndGet(System.nanoTime() - end);
             }
         }
     }
