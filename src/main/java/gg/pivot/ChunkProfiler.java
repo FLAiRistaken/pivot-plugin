@@ -204,6 +204,10 @@ public class ChunkProfiler implements Listener {
     }
 
     public void flushAndReset() {
+        // Fast path: skip all map allocations when disabled and no events have been recorded.
+        // Event handlers only accumulate counts when enabled=true, so this peek is safe.
+        if (!enabled && totalChunksLoaded.get() == 0 && totalChunksUnloaded.get() == 0) return;
+
         // Atomically swap accumulator maps so main-thread producers immediately write to
         // fresh maps while we safely process the captured snapshots.
         ConcurrentHashMap<String, Double> capturedTotalLoad = pluginTotalLoadTimeMs.getAndSet(new ConcurrentHashMap<>());
@@ -216,8 +220,6 @@ public class ChunkProfiler implements Listener {
 
         int chunksLoaded = totalChunksLoaded.getAndSet(0);
         int chunksUnloaded = totalChunksUnloaded.getAndSet(0);
-
-        if (!enabled && chunksLoaded == 0 && chunksUnloaded == 0) return;
 
         JsonObject event = new JsonObject();
         event.addProperty("type", "CHUNK_PROFILE");

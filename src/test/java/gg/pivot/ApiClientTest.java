@@ -80,6 +80,7 @@ public class ApiClientTest {
     public void testNetworkFailureSchedulesRetry() throws Exception {
         Call mockCall = mock(Call.class);
         when(httpClient.newCall(any(Request.class))).thenReturn(mockCall);
+        when(mockCall.request()).thenReturn(dummyRequest());
 
         doAnswer(invocation -> {
             Callback cb = invocation.getArgument(0);
@@ -108,6 +109,7 @@ public class ApiClientTest {
     public void testMaxRetriesExceeded_discardsBatch() throws Exception {
         Call mockCall = mock(Call.class);
         when(httpClient.newCall(any(Request.class))).thenReturn(mockCall);
+        when(mockCall.request()).thenReturn(dummyRequest());
 
         doAnswer(invocation -> {
             Callback cb = invocation.getArgument(0);
@@ -139,6 +141,7 @@ public class ApiClientTest {
     public void testRateLimitResponse_schedulesRetryWithCorrectCount() throws Exception {
         Call mockCall = mock(Call.class);
         when(httpClient.newCall(any(Request.class))).thenReturn(mockCall);
+        when(mockCall.request()).thenReturn(dummyRequest());
 
         doAnswer(invocation -> {
             Callback cb = invocation.getArgument(0);
@@ -168,6 +171,7 @@ public class ApiClientTest {
     public void testRateLimitAtMaxRetries_discardsBatch() throws Exception {
         Call mockCall = mock(Call.class);
         when(httpClient.newCall(any(Request.class))).thenReturn(mockCall);
+        when(mockCall.request()).thenReturn(dummyRequest());
 
         doAnswer(invocation -> {
             Callback cb = invocation.getArgument(0);
@@ -196,6 +200,7 @@ public class ApiClientTest {
     public void testUnauthorizedResponse_noRetry() throws Exception {
         Call mockCall = mock(Call.class);
         when(httpClient.newCall(any(Request.class))).thenReturn(mockCall);
+        when(mockCall.request()).thenReturn(dummyRequest());
 
         doAnswer(invocation -> {
             Callback cb = invocation.getArgument(0);
@@ -221,6 +226,7 @@ public class ApiClientTest {
     public void testBadRequestResponse_noRetry() throws Exception {
         Call mockCall = mock(Call.class);
         when(httpClient.newCall(any(Request.class))).thenReturn(mockCall);
+        when(mockCall.request()).thenReturn(dummyRequest());
 
         doAnswer(invocation -> {
             Callback cb = invocation.getArgument(0);

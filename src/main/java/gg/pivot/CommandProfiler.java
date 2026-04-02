@@ -16,6 +16,7 @@ import java.util.Map;
 import java.util.TimeZone;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.LongSupplier;
 
 /**
@@ -31,6 +32,8 @@ public class CommandProfiler implements Listener {
     private final double slowThresholdMs;
 
     private static final int PRUNE_SIZE_THRESHOLD = 50;
+    private static final long PRUNE_INTERVAL_NANOS = 60L * 1_000_000_000L; // 60 seconds
+    private final AtomicLong lastPruneNano = new AtomicLong(0L);
 
     static class CommandTiming {
         final String commandLabel;
@@ -94,7 +97,8 @@ public class CommandProfiler implements Listener {
 
         if (timing == null) return;
 
-        long durationNanos = clock.getAsLong() - timing.startNanos;
+        long endNanos = clock.getAsLong();
+        long durationNanos = endNanos - timing.startNanos;
         double durationMs = durationNanos / 1_000_000.0;
 
         if (durationMs >= slowThresholdMs) {
@@ -128,13 +132,13 @@ public class CommandProfiler implements Listener {
             eventCollector.addProfilingEvent(slowCommandEvent);
         }
 
-        if (activeTimings.size() > PRUNE_SIZE_THRESHOLD) {
-            pruneStaleTimings();
+        if (activeTimings.size() > PRUNE_SIZE_THRESHOLD || endNanos - lastPruneNano.get() > PRUNE_INTERVAL_NANOS) {
+            pruneStaleTimings(endNanos);
+            lastPruneNano.set(endNanos);
         }
     }
 
-    private void pruneStaleTimings() {
-        long now = clock.getAsLong();
+    private void pruneStaleTimings(long now) {
         // 5 minutes in nanoseconds
         long staleThreshold = 5L * 60L * 1_000_000_000L;
 
