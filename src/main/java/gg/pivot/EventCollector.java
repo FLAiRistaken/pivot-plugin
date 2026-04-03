@@ -49,6 +49,9 @@ public class EventCollector {
     private final Queue<PlayerEventData> playerEvents = new ConcurrentLinkedQueue<>();
     private final Queue<PerformanceEventData> performanceEvents = new ConcurrentLinkedQueue<>();
     private final Queue<ServerEventData> serverEvents = new ConcurrentLinkedQueue<>();
+    private final Queue<JsonObject> profilingEvents = new ConcurrentLinkedQueue<>();
+
+    private ApiClient apiClient;
 
     // Prevents multiple concurrent retry chains from stacking when the API is unreachable.
     // A top-level send (attempt == 1) is skipped when a retry chain is already active,
@@ -101,6 +104,7 @@ public class EventCollector {
         }
 
         this.httpClient = httpClient;
+        this.apiClient = new ApiClient(plugin, httpClient);
     }
 
     /**
@@ -110,6 +114,20 @@ public class EventCollector {
      */
     public void setTickProfiler(TickProfiler tickProfiler) {
         this.tickProfiler = tickProfiler;
+    }
+
+    /**
+     * Enqueues a profiling event JSON object to the profiling event queue
+     * for inclusion in the next batch flush.
+     *
+     * @param event The profiling event as a {@link JsonObject}
+     */
+    public void addProfilingEvent(JsonObject event) {
+        profilingEvents.add(event);
+    }
+
+    public int getProfilingEventCount() {
+        return profilingEvents.size();
     }
 
     /**
@@ -131,6 +149,7 @@ public class EventCollector {
         } else {
             this.apiKey = trimmedKey;
         }
+        if (this.apiClient != null) this.apiClient.reload();
     }
 
     /**
@@ -240,11 +259,11 @@ public class EventCollector {
 
         // Send synchronously
         try {
-            sendToAPISync(payload.toString());
+            apiClient.sendToAPISync(payload.toString());
         } catch (IOException e) {
             // SECURITY: Redact sensitive info (API key) from exception message
             String errorMsg = e.getMessage() != null ? e.getMessage() : "Unknown error";
-            logger.warning("Failed to send SERVER_STOP event: " + redactSensitiveInfo(errorMsg, this.apiKey));
+            logger.warning("Failed to send SERVER_STOP event: " + ApiClient.redactSensitiveInfo(errorMsg, this.apiKey));
         }
     }
 
@@ -290,7 +309,7 @@ public class EventCollector {
         }
 
         // ⚡ Bolt Optimization: Early return if queues empty to avoid allocations
-        if (playerEvents.isEmpty() && performanceEvents.isEmpty() && serverEvents.isEmpty() && tickProfileEvent == null) {
+        if (playerEvents.isEmpty() && performanceEvents.isEmpty() && serverEvents.isEmpty() && tickProfileEvent == null && profilingEvents.isEmpty()) {
             if (debugEnabled) {
                 logger.info("No events to send");
             }
@@ -355,12 +374,18 @@ public class EventCollector {
             serverArray.add(event);
         }
 
+        JsonArray profilingArray = new JsonArray();
+        JsonObject pe;
+        while ((pe = profilingEvents.poll()) != null) {
+            profilingArray.add(pe);
+        }
+
         if (debugEnabled) {
             logger.info("Events to send - Player: " + playerArray.size() + ", Performance: " + perfArray.size() + ", Server: " + serverArray.size());
         }
 
         // Nothing to send (double check)
-        if (playerArray.size() == 0 && perfArray.size() == 0 && serverArray.size() == 0 && tickProfileEvent == null) {
+        if (playerArray.size() == 0 && perfArray.size() == 0 && serverArray.size() == 0 && tickProfileEvent == null && profilingArray.size() == 0) {
             return;
         }
 
@@ -370,6 +395,10 @@ public class EventCollector {
         payload.add("player_events", playerArray);
         payload.add("performance_events", perfArray);
         payload.add("server_events", serverArray);
+
+        if (profilingArray.size() > 0) {
+            payload.add("profiling_events", profilingArray);
+        }
 
         if (tickProfileEvent != null) {
              JsonArray tpArray = new JsonArray();
@@ -386,7 +415,11 @@ public class EventCollector {
         }
 
         // Send to API
-        sendToAPI(json);
+        apiClient.sendToAPI(json);
+    }
+
+    public ApiClient getApiClient() {
+        return apiClient;
     }
 
     /**
