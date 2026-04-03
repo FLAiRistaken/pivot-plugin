@@ -379,11 +379,10 @@ public class TickProfiler {
             try {
                 delegate.callEvent(event);
             } finally {
-                // ⚡ Bolt Optimization: Reduce expensive System.nanoTime() calls to minimize overhead
+                // ⚡ Bolt Optimization: Only 2 nanoTime() calls per event (start + end); overhead tracking removed to avoid a 3rd call
                 long end = System.nanoTime();
                 long duration = end - start;
                 cachedSample.add(duration);
-                profiler.overheadNano.addAndGet(System.nanoTime() - end);
             }
         }
     }

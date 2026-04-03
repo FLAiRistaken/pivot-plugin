@@ -229,9 +229,7 @@ public class EventCollectorTest {
     @Test
     public void testRetryPendingCoalescesAndClearsOnSuccess() throws Exception {
         when(plugin.getLogger()).thenReturn(Logger.getGlobal());
-        // when(plugin.getConfig()).thenReturn(config);
         when(plugin.getApiKey()).thenReturn("pvt_validkey1234567890");
-        // omit lenient
         when(plugin.getApiEndpoint()).thenReturn("https://api.example.com/v1/ingest");
 
         OkHttpClient mockHttpClient = mock(OkHttpClient.class);
@@ -278,9 +276,7 @@ public class EventCollectorTest {
     @Test
     public void testRetryPendingClearedOnBuildFailure() throws Exception {
         when(plugin.getLogger()).thenReturn(Logger.getGlobal());
-        // when(plugin.getConfig()).thenReturn(config);
         when(plugin.getApiKey()).thenReturn("pvt_validkey1234567890");
-        // Omit lenient stubbing
         // Build request will fail because endpoint is missing
         when(plugin.getApiEndpoint()).thenReturn(null);
 
