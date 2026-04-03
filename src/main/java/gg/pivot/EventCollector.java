@@ -111,12 +111,10 @@ public class EventCollector {
     }
 
     /**
-     * Reloads configuration values (API key).
-     * <p>
-     * Updates the API key from the config file. Validates the key format
-     * (must start with 'pvt_' and be >= 20 chars). If invalid, the collector
-     * is disabled to prevent authentication errors.
-     * </p>
+     * Enqueues a profiling event JSON object to the profiling event queue
+     * for inclusion in the next batch flush.
+     *
+     * @param event The profiling event as a {@link JsonObject}
      */
     public void addProfilingEvent(JsonObject event) {
         profilingEvents.add(event);
@@ -126,6 +124,14 @@ public class EventCollector {
         return profilingEvents.size();
     }
 
+    /**
+     * Reloads configuration values (API key).
+     * <p>
+     * Updates the API key from the config file. Validates the key format
+     * (must start with 'pvt_' and be >= 20 chars). If invalid, the collector
+     * is disabled to prevent authentication errors.
+     * </p>
+     */
     public void reload() {
         String trimmedKey = plugin.getApiKey();
 

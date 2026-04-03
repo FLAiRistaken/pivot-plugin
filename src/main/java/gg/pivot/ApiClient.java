@@ -122,7 +122,11 @@ public class ApiClient {
                                 } catch (NumberFormatException ignored) {}
                             }
                             logger.warning("Rate limit exceeded. Retrying after " + delaySeconds + "s.");
-                            scheduleRetryCustom(json, retryCount, delaySeconds);
+                            if (retryCount < BACKOFF_SECONDS.length) {
+                                scheduleRetryCustom(json, retryCount + 1, delaySeconds);
+                            } else {
+                                logger.warning("Max retries reached after 429. Discarding batch.");
+                            }
                         } else if (response.code() == 400) {
                             logger.severe("Invalid request data. Enable debug mode for details.");
                             // DO NOT RETRY 400

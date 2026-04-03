@@ -71,10 +71,10 @@ profiling:
   mode: auto
 
   chunk_profiling:
-    enabled: true
+    enabled: false
     overhead_threshold_ms: 0.5
   command_profiling:
-    enabled: true
+    enabled: false
     slow_threshold_ms: 100
 
   # NOTE: The sampling, triggers and privacy.share_anonymous_data options below

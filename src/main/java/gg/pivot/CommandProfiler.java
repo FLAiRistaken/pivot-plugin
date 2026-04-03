@@ -16,6 +16,8 @@ import java.util.Map;
 import java.util.TimeZone;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.LongSupplier;
 
 /**
  * Profiles player commands to detect slow commands.
@@ -24,9 +26,14 @@ public class CommandProfiler implements Listener {
     private final PivotPlugin plugin;
     private final EventCollector eventCollector;
     private final ConcurrentHashMap<UUID, CommandTiming> activeTimings = new ConcurrentHashMap<>();
+    private final LongSupplier clock;
 
     private volatile boolean enabled;
     private final double slowThresholdMs;
+
+    private static final int PRUNE_SIZE_THRESHOLD = 50;
+    private static final long PRUNE_INTERVAL_NANOS = 60L * 1_000_000_000L; // 60 seconds
+    private final AtomicLong lastPruneNano = new AtomicLong(0L);
 
     static class CommandTiming {
         final String commandLabel;
@@ -43,9 +50,16 @@ public class CommandProfiler implements Listener {
     }
 
     public CommandProfiler(PivotPlugin plugin, EventCollector eventCollector) {
+        this(plugin, eventCollector, System::nanoTime);
+    }
+
+    CommandProfiler(PivotPlugin plugin, EventCollector eventCollector, LongSupplier clock) {
         this.plugin = plugin;
         this.eventCollector = eventCollector;
-        this.enabled = plugin.getConfig().getBoolean("profiling.command_profiling.enabled", true);
+        this.clock = clock;
+        boolean globalEnabled = plugin.getConfig().getBoolean("profiling.enabled", true);
+        boolean commandEnabled = plugin.getConfig().getBoolean("profiling.command_profiling.enabled", false);
+        this.enabled = globalEnabled && commandEnabled;
         this.slowThresholdMs = plugin.getConfig().getDouble("profiling.command_profiling.slow_threshold_ms", 100.0);
     }
 
@@ -61,7 +75,8 @@ public class CommandProfiler implements Listener {
         String message = event.getMessage();
         if (message == null || message.isEmpty()) return;
 
-        String commandLabel = message.split(" ")[0];
+        int spaceIndex = message.indexOf(' ');
+        String commandLabel = (spaceIndex == -1) ? message : message.substring(0, spaceIndex);
         if (commandLabel.startsWith("/")) {
             commandLabel = commandLabel.substring(1);
         }
@@ -70,7 +85,7 @@ public class CommandProfiler implements Listener {
         int playersOnline = plugin.getOnlinePlayerCount();
 
         activeTimings.put(event.getPlayer().getUniqueId(),
-            new CommandTiming(commandLabel, System.nanoTime(), tps, playersOnline));
+            new CommandTiming(commandLabel, clock.getAsLong(), tps, playersOnline));
     }
 
     @EventHandler(priority = EventPriority.MONITOR)
@@ -82,7 +97,8 @@ public class CommandProfiler implements Listener {
 
         if (timing == null) return;
 
-        long durationNanos = System.nanoTime() - timing.startNanos;
+        long endNanos = clock.getAsLong();
+        long durationNanos = endNanos - timing.startNanos;
         double durationMs = durationNanos / 1_000_000.0;
 
         if (durationMs >= slowThresholdMs) {
@@ -116,11 +132,13 @@ public class CommandProfiler implements Listener {
             eventCollector.addProfilingEvent(slowCommandEvent);
         }
 
-        pruneStaleTimings();
+        if (activeTimings.size() > PRUNE_SIZE_THRESHOLD || endNanos - lastPruneNano.get() > PRUNE_INTERVAL_NANOS) {
+            pruneStaleTimings(endNanos);
+            lastPruneNano.set(endNanos);
+        }
     }
 
-    private void pruneStaleTimings() {
-        long now = System.nanoTime();
+    private void pruneStaleTimings(long now) {
         // 5 minutes in nanoseconds
         long staleThreshold = 5L * 60L * 1_000_000_000L;
 
