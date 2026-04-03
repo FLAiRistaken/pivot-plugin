@@ -34,9 +34,16 @@ public class HostnameDetector {
      *   <li>Standard form {@code "example.com:25565"} → {@code "example.com"}</li>
      *   <li>Standard form {@code "example.com"} → {@code "example.com"}</li>
      *   <li>Unbracketed IPv6 {@code "2001:db8::1"} → {@code "2001:db8::1"} (returned unchanged)</li>
+     *   <li>{@code null} → {@code null}</li>
      * </ul>
+     *
+     * @param host the host string to strip; may be {@code null}
+     * @return the host without a port suffix, or {@code null} if {@code host} is {@code null}
      */
     public static String stripPort(String host) {
+        if (host == null) {
+            return null;
+        }
         if (host.startsWith("[")) {
             // IPv6 bracketed: "[addr]:port" or "[addr]"
             int closingBracket = host.indexOf(']');

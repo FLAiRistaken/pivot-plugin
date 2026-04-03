@@ -902,6 +902,7 @@ X-API-Key: pvt_uP1JM4bRsoizE-sgBIlVu1458F9VKqmnwebxktAUHAQ
 **ServerEvent:**
 - `timestamp` (int): Unix timestamp in milliseconds
 - `event_type` (string): `"SERVER_START"` or `"SERVER_STOP"`
+- `reason` (string, optional): Human-readable reason for server stopping (only present for `"SERVER_STOP"`)
 
 **PerformanceEvent:**
 - `timestamp` (int): Unix timestamp in milliseconds

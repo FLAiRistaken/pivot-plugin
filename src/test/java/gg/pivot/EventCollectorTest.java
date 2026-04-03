@@ -6,7 +6,9 @@ import com.google.gson.JsonParser;
 import okhttp3.Call;
 import okhttp3.Callback;
 import okhttp3.OkHttpClient;
+import okhttp3.Protocol;
 import okhttp3.Request;
+import okhttp3.Response;
 import okio.Buffer;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -19,7 +21,9 @@ import java.lang.reflect.Method;
 import java.util.Queue;
 import java.util.logging.Logger;
 import java.security.MessageDigest;
+import java.util.concurrent.atomic.AtomicBoolean;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
@@ -28,6 +32,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.mockito.ArgumentMatchers.any;
@@ -219,6 +224,82 @@ public class EventCollectorTest {
         verify(mockProfiler).collectSample();
         // Verify the early-return was NOT taken (the "No events to send" log must NOT appear)
         verify(mockLogger, never()).info("No events to send");
+    }
+
+    @Test
+    public void testRetryPendingCoalescesAndClearsOnSuccess() throws Exception {
+        when(plugin.getLogger()).thenReturn(Logger.getGlobal());
+        when(plugin.getConfig()).thenReturn(config);
+        when(plugin.getApiKey()).thenReturn("pvt_validkey1234567890");
+        when(config.getBoolean("debug.enabled", false)).thenReturn(false);
+        when(config.getBoolean("debug.log-batches", false)).thenReturn(false);
+        when(config.getBoolean("privacy.anonymize-players", false)).thenReturn(false);
+        when(plugin.getApiEndpoint()).thenReturn("https://api.example.com/v1/ingest");
+        when(plugin.isEnabled()).thenReturn(true);
+
+        OkHttpClient mockHttpClient = mock(OkHttpClient.class);
+        Call mockCall = mock(Call.class);
+        ArgumentCaptor<Request> requestCaptor = ArgumentCaptor.forClass(Request.class);
+        ArgumentCaptor<Callback> callbackCaptor = ArgumentCaptor.forClass(Callback.class);
+        when(mockHttpClient.newCall(requestCaptor.capture())).thenReturn(mockCall);
+        doNothing().when(mockCall).enqueue(callbackCaptor.capture());
+
+        EventCollector collector = new EventCollector(plugin, mockHttpClient);
+
+        Field retryPendingField = EventCollector.class.getDeclaredField("retryPending");
+        retryPendingField.setAccessible(true);
+        AtomicBoolean retryPending = (AtomicBoolean) retryPendingField.get(collector);
+
+        Method sendToApi = EventCollector.class.getDeclaredMethod("sendToAPI", String.class, int.class);
+        sendToApi.setAccessible(true);
+
+        sendToApi.invoke(collector, "{}", 1);
+        assertTrue(retryPending.get(), "retryPending should be set for the first send");
+
+        // A second top-level send while retryPending is true should be coalesced (no new call).
+        sendToApi.invoke(collector, "{}", 1);
+        verify(mockHttpClient, times(1)).newCall(any(Request.class));
+
+        // Complete the in-flight request successfully to clear the flag.
+        Callback cb = callbackCaptor.getValue();
+        assertNotNull(cb, "Callback should be captured");
+        Request builtRequest = requestCaptor.getValue();
+        Response successResponse = new Response.Builder()
+                .code(200)
+                .protocol(Protocol.HTTP_1_1)
+                .message("OK")
+                .request(builtRequest)
+                .build();
+        cb.onResponse(mockCall, successResponse);
+
+        assertFalse(retryPending.get(), "retryPending should clear after successful response");
+    }
+
+    @Test
+    public void testRetryPendingClearedOnBuildFailure() throws Exception {
+        when(plugin.getLogger()).thenReturn(Logger.getGlobal());
+        when(plugin.getConfig()).thenReturn(config);
+        when(plugin.getApiKey()).thenReturn("pvt_validkey1234567890");
+        when(config.getBoolean("debug.enabled", false)).thenReturn(false);
+        when(config.getBoolean("debug.log-batches", false)).thenReturn(false);
+        when(config.getBoolean("privacy.anonymize-players", false)).thenReturn(false);
+        // Build request will fail because endpoint is missing
+        when(plugin.getApiEndpoint()).thenReturn(null);
+
+        OkHttpClient mockHttpClient = mock(OkHttpClient.class);
+        EventCollector collector = new EventCollector(plugin, mockHttpClient);
+
+        Field retryPendingField = EventCollector.class.getDeclaredField("retryPending");
+        retryPendingField.setAccessible(true);
+        AtomicBoolean retryPending = (AtomicBoolean) retryPendingField.get(collector);
+
+        Method sendToApi = EventCollector.class.getDeclaredMethod("sendToAPI", String.class, int.class);
+        sendToApi.setAccessible(true);
+
+        sendToApi.invoke(collector, "{}", 1);
+
+        assertFalse(retryPending.get(), "retryPending should be cleared when buildRequest fails");
+        verify(mockHttpClient, never()).newCall(any(Request.class));
     }
 
     @Test
