@@ -74,13 +74,12 @@ public class PivotCommand implements CommandExecutor, TabCompleter {
      * <p>
      * Displays:
      * <ul>
-     *   <li>Configuration validity (API Key, Endpoint).</li>
-     *   <li>Collection status (Enabled/Disabled, Queue sizes).</li>
-     *   <li>Last successful batch sent time.</li>
-     *   <li>Server Performance (TPS, Player Count).</li>
-     *   <li>Privacy and Debug settings.</li>
+     *   <li>Connection status (CONNECTED / DISCONNECTED) and time since last successful batch.</li>
+     *   <li>Server ID and API endpoint from config.</li>
+     *   <li>Pending event queue sizes (player and profiling events).</li>
+     *   <li>TPS profiler status (enabled/disabled, mode).</li>
+     *   <li>Chunk and command profiler enabled state.</li>
      * </ul>
-     * API Keys are masked for security.
      * </p>
      *
      * @param sender The command sender.
@@ -111,8 +110,8 @@ public class PivotCommand implements CommandExecutor, TabCompleter {
         boolean tpsEnabled = plugin.getConfig().getBoolean("profiling.enabled", true);
         String tpsStatus = tpsEnabled ? "enabled (" + tpsMode + ")" : "disabled";
 
-        boolean chunkEnabled = plugin.getConfig().getBoolean("profiling.chunk_profiling.enabled", true);
-        boolean commandEnabled = plugin.getConfig().getBoolean("profiling.command_profiling.enabled", true);
+        boolean chunkEnabled = plugin.getConfig().getBoolean("profiling.chunk_profiling.enabled", false);
+        boolean commandEnabled = plugin.getConfig().getBoolean("profiling.command_profiling.enabled", false);
 
         String endpoint = plugin.getConfig().getString("api.endpoint", "not set");
 

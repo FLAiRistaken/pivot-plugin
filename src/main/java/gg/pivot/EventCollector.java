@@ -5,7 +5,6 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import okhttp3.*;
 
-import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -15,7 +14,6 @@ import java.util.Objects;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.logging.Logger;
 
 /**
@@ -52,11 +50,6 @@ public class EventCollector {
     private final Queue<JsonObject> profilingEvents = new ConcurrentLinkedQueue<>();
 
     private ApiClient apiClient;
-
-    // Prevents multiple concurrent retry chains from stacking when the API is unreachable.
-    // A top-level send (attempt == 1) is skipped when a retry chain is already active,
-    // avoiding log spam and amplified load during outages.
-    private final AtomicBoolean retryPending = new AtomicBoolean(false);
 
     // ⚡ Bolt Optimization: Reuse MessageDigest to prevent object instantiation overhead during async flush
     private static final ThreadLocal<MessageDigest> SHA256_DIGEST = ThreadLocal.withInitial(() -> {
@@ -420,218 +413,6 @@ public class EventCollector {
 
     public ApiClient getApiClient() {
         return apiClient;
-    }
-
-    /**
-     * Builds the HTTP request for the API.
-     * <p>
-     * Validates configuration, enforces HTTPS, and sets the {@code X-API-Key} header.
-     * </p>
-     *
-     * @param json The JSON payload to send.
-     * @return The built {@link Request} object, or {@code null} if validation fails.
-     */
-    private Request buildRequest(String json) {
-        String apiEndpoint = plugin.getApiEndpoint();
-
-        if (apiEndpoint == null || apiKey == null) {
-            logger.warning("API endpoint or key not configured. Skipping event send.");
-            return null;
-        }
-
-        // SECURITY: Final check for HTTPS before sending
-        if (!apiEndpoint.startsWith("https://")) {
-            logger.severe("Security check failed: API endpoint must use HTTPS. Event dropped.");
-            return null;
-        }
-
-        RequestBody body = RequestBody.create(
-                json,
-                MediaType.parse("application/json"));
-
-        return new Request.Builder()
-                .url(apiEndpoint)
-                .addHeader("X-API-Key", apiKey)
-                .addHeader("Content-Type", "application/json")
-                .post(body)
-                .build();
-    }
-
-    /**
-     * Send JSON payload to API endpoint asynchronously.
-     *
-     * @param json The JSON payload.
-     */
-    private void sendToAPI(String json) {
-        sendToAPI(json, 1);
-    }
-
-    /**
-     * Send JSON payload to API endpoint asynchronously with retry logic.
-     */
-    private void sendToAPI(String json, int attempt) {
-        // Skip top-level sends while a retry chain is already active to prevent multiple
-        // overlapping retry chains from piling up during an outage. Acquire the flag atomically
-        // before enqueuing the HTTP call.
-        if (attempt == 1) {
-            if (!retryPending.compareAndSet(false, true)) {
-                logger.warning("Skipping batch send: a retry chain is already pending.");
-                return;
-            }
-        } else {
-            // Ensure the flag stays raised for in-progress retry chains.
-            retryPending.set(true);
-        }
-
-        Request request;
-        try {
-            request = buildRequest(json);
-        } catch (Exception e) {
-            logger.warning("Failed to build request for events: " + e.getMessage());
-            retryPending.set(false);
-            return;
-        }
-
-        if (request == null) {
-            // If we cannot build a request (e.g., bad config or insecure endpoint),
-            // ensure any pending retry chain is cleared so future sends are not suppressed.
-            retryPending.set(false);
-            return;
-        }
-
-        httpClient.newCall(request).enqueue(new Callback() {
-            @Override
-            public void onFailure(Call call, IOException e) {
-                // SECURITY: Retrieve API key to ensure redaction (using request header)
-                String usedApiKey = call.request().header("X-API-Key");
-                String errorMsg = e.getMessage() != null ? e.getMessage() : "Unknown error";
-
-                // SECURITY: Redact sensitive info (API key and regex pattern) from exception message
-                errorMsg = redactSensitiveInfo(errorMsg, usedApiKey);
-
-                logger.warning("Failed to send events: " + errorMsg);
-
-                if (plugin.getConfig().getBoolean("debug.enabled", false)) {
-                    logger.warning("Network error details: " + e.getClass().getSimpleName());
-                }
-
-                if (attempt <= 3) {
-                    long delayTicks = attempt == 1 ? 100L : attempt == 2 ? 300L : 900L;
-                    if (plugin.isEnabled()) {
-                        logger.info("Retrying batch send in " + (delayTicks / 20) + "s (Attempt " + (attempt + 1) + "/4)");
-                        retryPending.set(true);
-                        org.bukkit.Bukkit.getScheduler().runTaskLaterAsynchronously(plugin, () -> sendToAPI(json, attempt + 1), delayTicks);
-                    } else {
-                        retryPending.set(false);
-                    }
-                } else {
-                    retryPending.set(false);
-                }
-            }
-
-            @Override
-            public void onResponse(Call call, Response response) {
-                try {
-                    String usedApiKey = call.request().header("X-API-Key");
-                    if (response.isSuccessful()) {
-                        retryPending.set(false);
-                        String apiVersion = response.header("X-API-Version");
-                        logger.info("Connected to Pivot API version: " + apiVersion);
-                        String responseBody = response.body() != null ? response.body().string() : "no body";
-                        logger.info("Successfully sent events: " + redactSensitiveInfo(responseBody, usedApiKey));
-                    } else {
-                        String errorBody = response.body() != null ? response.body().string() : "no error details";
-
-                        // SECURITY: Redact API key from error logs if it appears in the response
-                        errorBody = redactSensitiveInfo(errorBody, usedApiKey);
-
-                        logger.warning("Failed to send events: " + response.code() + " - " + errorBody);
-
-                        // Specific error handling
-                        if (response.code() == 401) {
-                            logger.severe("Authentication failed! Check your API key in config.yml");
-                            logger.severe("Make sure your API key starts with 'pvt_'");
-                        } else if (response.code() == 429) {
-                            logger.warning("Rate limit exceeded.");
-                        } else if (response.code() == 400) {
-                            logger.severe("Invalid request data. Enable debug mode for details.");
-                        }
-
-                        if (response.code() != 401 && response.code() != 400 && attempt <= 3) {
-                            long delayTicks = attempt == 1 ? 100L : attempt == 2 ? 300L : 900L;
-                            if (plugin.isEnabled()) {
-                                logger.info("Retrying batch send in " + (delayTicks / 20) + "s (Attempt " + (attempt + 1) + "/4)");
-                                retryPending.set(true);
-                                org.bukkit.Bukkit.getScheduler().runTaskLaterAsynchronously(plugin, () -> sendToAPI(json, attempt + 1), delayTicks);
-                            } else {
-                                retryPending.set(false);
-                            }
-                        } else {
-                            retryPending.set(false);
-                        }
-                    }
-                } catch (IOException e) {
-                    logger.warning("Failed to read response: " + e.getMessage());
-                } finally {
-                    response.close();
-                }
-            }
-        });
-    }
-
-    /**
-     * Send JSON payload to API endpoint synchronously.
-     * <p>
-     * Used only for critical events (like SERVER_STOP) where we cannot rely on async execution.
-     * </p>
-     *
-     * @param json The JSON payload.
-     * @throws IOException If the network request fails.
-     */
-    private void sendToAPISync(String json) throws IOException {
-        Request request = buildRequest(json);
-        if (request == null) return;
-
-        String usedApiKey = request.header("X-API-Key");
-
-        try (Response response = httpClient.newCall(request).execute()) {
-            if (response.isSuccessful()) {
-                String apiVersion = response.header("X-API-Version");
-                logger.info("Connected to Pivot API version: " + apiVersion);
-                String responseBody = response.body() != null ? response.body().string() : "no body";
-                logger.info("Successfully sent events: " + redactSensitiveInfo(responseBody, usedApiKey));
-            } else {
-                String errorBody = response.body() != null ? response.body().string() : "no error details";
-                logger.warning("Failed to send events: " + response.code() + " - " + redactSensitiveInfo(errorBody, usedApiKey));
-            }
-        }
-    }
-
-    /**
-     * Redact sensitive information (API keys) from logs.
-     * <p>
-     * Scrubs both the specific API key used and any pattern resembling an API key
-     * to prevent leaks in stack traces or error messages.
-     * </p>
-     *
-     * @param text   The text to sanitize.
-     * @param apiKey The specific API key known to be in use (optional).
-     * @return The sanitized text with keys replaced by {@code [REDACTED]} or {@code pvt_***}.
-     */
-    private String redactSensitiveInfo(String text, String apiKey) {
-        if (text == null) return "null";
-        String redacted = text;
-
-        // Redact specific key if known
-        if (apiKey != null && !apiKey.isEmpty()) {
-            redacted = redacted.replace(apiKey, "[REDACTED]");
-        }
-
-        // SECURITY: Defense in Depth - Redact any pattern resembling an API key
-        // Matches "pvt_" followed by at least 10 alphanumeric/underscore characters
-        redacted = redacted.replaceAll("pvt_[a-zA-Z0-9_]{10,}", "pvt_***");
-
-        return redacted;
     }
 
     /**

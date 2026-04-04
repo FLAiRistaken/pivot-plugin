@@ -9,6 +9,9 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerCommandPreprocessEvent;
 import org.bukkit.plugin.Plugin;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Iterator;
@@ -34,6 +37,14 @@ public class CommandProfiler implements Listener {
     private static final int PRUNE_SIZE_THRESHOLD = 50;
     private static final long PRUNE_INTERVAL_NANOS = 60L * 1_000_000_000L; // 60 seconds
     private final AtomicLong lastPruneNano = new AtomicLong(0L);
+
+    private static final ThreadLocal<MessageDigest> SHA256_DIGEST = ThreadLocal.withInitial(() -> {
+        try {
+            return MessageDigest.getInstance("SHA-256");
+        } catch (NoSuchAlgorithmException e) {
+            throw new RuntimeException("SHA-256 not available!", e);
+        }
+    });
 
     static class CommandTiming {
         final String commandLabel;
@@ -66,6 +77,19 @@ public class CommandProfiler implements Listener {
     public void disable() {
         this.enabled = false;
         this.activeTimings.clear();
+    }
+
+    /**
+     * Reloads configuration and re-evaluates the enabled state.
+     * <p>
+     * Called when the plugin configuration is reloaded via {@code /pivot reload}.
+     * This avoids permanently disabling the profiler after a reload.
+     * </p>
+     */
+    public void reload() {
+        boolean globalEnabled = plugin.getConfig().getBoolean("profiling.enabled", true);
+        boolean commandEnabled = plugin.getConfig().getBoolean("profiling.command_profiling.enabled", false);
+        this.enabled = globalEnabled && commandEnabled;
     }
 
     @EventHandler(priority = EventPriority.LOWEST)
@@ -125,7 +149,9 @@ public class CommandProfiler implements Listener {
             slowCommandEvent.addProperty("command", timing.commandLabel);
             slowCommandEvent.addProperty("executor_plugin", executorPlugin);
             slowCommandEvent.addProperty("duration_ms", Math.round(durationMs));
-            slowCommandEvent.addProperty("player_uuid", playerId.toString());
+            boolean anonymize = plugin.getConfig().getBoolean("privacy.anonymize-players", false);
+            String playerUuidValue = anonymize ? hashUuid(playerId.toString()) : playerId.toString();
+            slowCommandEvent.addProperty("player_uuid", playerUuidValue);
             slowCommandEvent.addProperty("server_tps_during", timing.tpsAtStart);
             slowCommandEvent.addProperty("players_online", timing.playersOnlineAtStart);
 
@@ -153,5 +179,19 @@ public class CommandProfiler implements Listener {
 
     public boolean isEnabled() {
         return enabled;
+    }
+
+    private String hashUuid(String uuid) {
+        MessageDigest digest = SHA256_DIGEST.get();
+        byte[] hash = digest.digest(uuid.getBytes(StandardCharsets.UTF_8));
+        StringBuilder hexString = new StringBuilder();
+        for (byte b : hash) {
+            String hex = Integer.toHexString(0xff & b);
+            if (hex.length() == 1) {
+                hexString.append('0');
+            }
+            hexString.append(hex);
+        }
+        return hexString.toString();
     }
 }

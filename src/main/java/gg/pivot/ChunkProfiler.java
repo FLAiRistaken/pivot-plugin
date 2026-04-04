@@ -76,6 +76,19 @@ public class ChunkProfiler implements Listener {
         this.enabled = false;
     }
 
+    /**
+     * Reloads configuration and re-evaluates the enabled state.
+     * <p>
+     * Called when the plugin configuration is reloaded via {@code /pivot reload}.
+     * This avoids permanently disabling the profiler after a reload.
+     * </p>
+     */
+    public void reload() {
+        boolean globalEnabled = plugin.getConfig().getBoolean("profiling.enabled", true);
+        boolean chunkEnabled = plugin.getConfig().getBoolean("profiling.chunk_profiling.enabled", false);
+        this.enabled = globalEnabled && chunkEnabled;
+    }
+
     private void checkOverhead(long overhead) {
         overheadNano.addAndGet(overhead);
         int count = processedChunks.incrementAndGet();

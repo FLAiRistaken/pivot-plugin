@@ -6,9 +6,7 @@ import com.google.gson.JsonParser;
 import okhttp3.Call;
 import okhttp3.Callback;
 import okhttp3.OkHttpClient;
-import okhttp3.Protocol;
 import okhttp3.Request;
-import okhttp3.Response;
 import okio.Buffer;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -21,9 +19,7 @@ import java.lang.reflect.Method;
 import java.util.Queue;
 import java.util.logging.Logger;
 import java.security.MessageDigest;
-import java.util.concurrent.atomic.AtomicBoolean;
 
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
@@ -227,7 +223,7 @@ public class EventCollectorTest {
     }
 
     @Test
-    public void testRetryPendingCoalescesAndClearsOnSuccess() throws Exception {
+    public void testFlushIncludesProfilingEventsInPayload() throws Exception {
         when(plugin.getLogger()).thenReturn(Logger.getGlobal());
         when(plugin.getConfig()).thenReturn(config);
         when(plugin.getApiKey()).thenReturn("pvt_validkey1234567890");
@@ -235,70 +231,55 @@ public class EventCollectorTest {
         when(config.getBoolean("debug.log-batches", false)).thenReturn(false);
         when(config.getBoolean("privacy.anonymize-players", false)).thenReturn(false);
         when(plugin.getApiEndpoint()).thenReturn("https://api.example.com/v1/ingest");
-        when(plugin.isEnabled()).thenReturn(true);
 
         OkHttpClient mockHttpClient = mock(OkHttpClient.class);
         Call mockCall = mock(Call.class);
         ArgumentCaptor<Request> requestCaptor = ArgumentCaptor.forClass(Request.class);
-        ArgumentCaptor<Callback> callbackCaptor = ArgumentCaptor.forClass(Callback.class);
         when(mockHttpClient.newCall(requestCaptor.capture())).thenReturn(mockCall);
-        doNothing().when(mockCall).enqueue(callbackCaptor.capture());
+        doNothing().when(mockCall).enqueue(any(Callback.class));
 
         EventCollector collector = new EventCollector(plugin, mockHttpClient);
 
-        Field retryPendingField = EventCollector.class.getDeclaredField("retryPending");
-        retryPendingField.setAccessible(true);
-        AtomicBoolean retryPending = (AtomicBoolean) retryPendingField.get(collector);
+        JsonObject profilingEvent = new JsonObject();
+        profilingEvent.addProperty("type", "SLOW_COMMAND");
+        profilingEvent.addProperty("duration_ms", 500);
+        collector.addProfilingEvent(profilingEvent);
 
-        Method sendToApi = EventCollector.class.getDeclaredMethod("sendToAPI", String.class, int.class);
-        sendToApi.setAccessible(true);
+        collector.flush();
 
-        sendToApi.invoke(collector, "{}", 1);
-        assertTrue(retryPending.get(), "retryPending should be set for the first send");
-
-        // A second top-level send while retryPending is true should be coalesced (no new call).
-        sendToApi.invoke(collector, "{}", 1);
+        // flush() must have delegated to ApiClient, which issued exactly one HTTP call
         verify(mockHttpClient, times(1)).newCall(any(Request.class));
 
-        // Complete the in-flight request successfully to clear the flag.
-        Callback cb = callbackCaptor.getValue();
-        assertNotNull(cb, "Callback should be captured");
-        Request builtRequest = requestCaptor.getValue();
-        Response successResponse = new Response.Builder()
-                .code(200)
-                .protocol(Protocol.HTTP_1_1)
-                .message("OK")
-                .request(builtRequest)
-                .build();
-        cb.onResponse(mockCall, successResponse);
-
-        assertFalse(retryPending.get(), "retryPending should clear after successful response");
+        // The captured request body must contain the profiling event
+        Request capturedRequest = requestCaptor.getValue();
+        assertNotNull(capturedRequest.body(), "Request body must not be null");
+        Buffer buffer = new Buffer();
+        capturedRequest.body().writeTo(buffer);
+        String json = buffer.readUtf8();
+        JsonObject payload = JsonParser.parseString(json).getAsJsonObject();
+        assertTrue(payload.has("profiling_events"), "profiling_events must be present in payload");
+        JsonArray profilingArray = payload.getAsJsonArray("profiling_events");
+        assertEquals(1, profilingArray.size(), "Exactly one profiling event must be in the payload");
+        assertEquals("SLOW_COMMAND", profilingArray.get(0).getAsJsonObject().get("type").getAsString());
     }
 
     @Test
-    public void testRetryPendingClearedOnBuildFailure() throws Exception {
+    public void testFlushSkipsSendWhenEndpointMissing() throws Exception {
         when(plugin.getLogger()).thenReturn(Logger.getGlobal());
         when(plugin.getConfig()).thenReturn(config);
         when(plugin.getApiKey()).thenReturn("pvt_validkey1234567890");
         when(config.getBoolean("debug.enabled", false)).thenReturn(false);
         when(config.getBoolean("debug.log-batches", false)).thenReturn(false);
         when(config.getBoolean("privacy.anonymize-players", false)).thenReturn(false);
-        // Build request will fail because endpoint is missing
-        when(plugin.getApiEndpoint()).thenReturn(null);
+        when(plugin.getApiEndpoint()).thenReturn(null); // No endpoint configured
 
         OkHttpClient mockHttpClient = mock(OkHttpClient.class);
         EventCollector collector = new EventCollector(plugin, mockHttpClient);
 
-        Field retryPendingField = EventCollector.class.getDeclaredField("retryPending");
-        retryPendingField.setAccessible(true);
-        AtomicBoolean retryPending = (AtomicBoolean) retryPendingField.get(collector);
+        collector.addPerformanceEvent(20.0, 5);
+        collector.flush();
 
-        Method sendToApi = EventCollector.class.getDeclaredMethod("sendToAPI", String.class, int.class);
-        sendToApi.setAccessible(true);
-
-        sendToApi.invoke(collector, "{}", 1);
-
-        assertFalse(retryPending.get(), "retryPending should be cleared when buildRequest fails");
+        // Without a valid endpoint, ApiClient.buildRequest() returns null and no HTTP call is made
         verify(mockHttpClient, never()).newCall(any(Request.class));
     }
 

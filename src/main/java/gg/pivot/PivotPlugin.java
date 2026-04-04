@@ -415,10 +415,10 @@ public class PivotPlugin extends JavaPlugin {
             tickProfiler.shutdown();
         }
         if (chunkProfiler != null) {
-            chunkProfiler.disable();
+            chunkProfiler.reload();
         }
         if (commandProfiler != null) {
-            commandProfiler.disable();
+            commandProfiler.reload();
         }
         tickProfiler = new TickProfiler(this, configManager);
         if (eventCollector != null) {
