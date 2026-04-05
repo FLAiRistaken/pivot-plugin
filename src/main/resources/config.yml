@@ -70,6 +70,13 @@ profiling:
   # To disable profiling entirely, set profiling.enabled: false above.
   mode: auto
 
+  chunk_profiling:
+    enabled: false
+    overhead_threshold_ms: 0.5
+  command_profiling:
+    enabled: false
+    slow_threshold_ms: 100
+
   # NOTE: The sampling, triggers and privacy.share_anonymous_data options below
   # are not yet implemented and have no effect on current behavior.
   # They are placeholders for future releases and may change.

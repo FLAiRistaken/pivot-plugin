@@ -31,6 +31,8 @@ public class PivotPlugin extends JavaPlugin {
     // Added for Phase 3A
     private ConfigManager configManager;
     private TickProfiler tickProfiler;
+    private ChunkProfiler chunkProfiler;
+    private CommandProfiler commandProfiler;
 
     // ⚡ Bolt Optimization: Cache player count to avoid main thread blocking
     private final AtomicInteger onlinePlayerCount = new AtomicInteger(0);
@@ -79,9 +81,17 @@ public class PivotPlugin extends JavaPlugin {
         // Initialize event collector
         eventCollector = new EventCollector(this);
 
+
         // Initialize TickProfiler
         tickProfiler = new TickProfiler(this, configManager);
         eventCollector.setTickProfiler(tickProfiler);
+
+        // Initialize Phase 3B Profilers
+        chunkProfiler = new ChunkProfiler(this, eventCollector);
+        commandProfiler = new CommandProfiler(this, eventCollector);
+        getServer().getPluginManager().registerEvents(chunkProfiler, this);
+        getServer().getPluginManager().registerEvents(commandProfiler, this);
+
 
         // Register event listener (only if collection enabled)
         if (getConfig().getBoolean("collection.enabled", true)) {
@@ -120,6 +130,9 @@ public class PivotPlugin extends JavaPlugin {
         if (tickProfiler != null) {
             tickProfiler.shutdown();
         }
+        if (commandProfiler != null) {
+            commandProfiler.disable();
+        }
 
         // Send SERVER_STOP event synchronously
         if (eventCollector != null) {
@@ -137,6 +150,10 @@ public class PivotPlugin extends JavaPlugin {
         // Flush any remaining events
         if (eventCollector != null) {
             logger.info("Flushing remaining events before shutdown...");
+            if (chunkProfiler != null) {
+                chunkProfiler.flushAndReset();
+                chunkProfiler.disable();
+            }
             eventCollector.flush();
         }
 
@@ -332,6 +349,7 @@ public class PivotPlugin extends JavaPlugin {
         flushTask = new BukkitRunnable() {
             @Override
             public void run() {
+                if (chunkProfiler != null) chunkProfiler.flushAndReset();
                 eventCollector.flush();
                 lastEventSentTime = System.currentTimeMillis();
             }
@@ -395,6 +413,12 @@ public class PivotPlugin extends JavaPlugin {
         // Shutdown and reinitialise TickProfiler to apply updated config and restore scheduler
         if (tickProfiler != null) {
             tickProfiler.shutdown();
+        }
+        if (chunkProfiler != null) {
+            chunkProfiler.reload();
+        }
+        if (commandProfiler != null) {
+            commandProfiler.reload();
         }
         tickProfiler = new TickProfiler(this, configManager);
         if (eventCollector != null) {
