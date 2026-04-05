@@ -206,6 +206,24 @@ private void scheduleNextTask(long delayTicks) {
   - `reason` (String, e.g. "manual")
   - `timestamp` (long)
 
+**7. CHUNK_PROFILE**
+- **Trigger:** Scheduled task (collected with batch flush)
+- **Data Captured:**
+  - `plugins` (Array of objects): Load/unload time per plugin
+  - `sample_duration_seconds` (int)
+  - `chunks_loaded` (int)
+  - `chunks_unloaded` (int)
+
+**8. SLOW_COMMAND**
+- **Trigger:** PlayerCommandPreprocessEvent exceeding threshold
+- **Data Captured:**
+  - `command` (String)
+  - `executor_plugin` (String)
+  - `duration_ms` (long)
+  - `player_uuid` (String, possibly anonymized)
+  - `server_tps_during` (double)
+  - `players_online` (int)
+
 ### Batch Format
 
 ```json
@@ -328,6 +346,12 @@ privacy:
 profiling:
   enabled: true                # Set to false to completely disable profiling
   mode: auto                   # auto | paper_only | custom_only
+  chunk_profiling:
+    enabled: false
+    overhead_threshold_ms: 0.5
+  command_profiling:
+    enabled: false
+    slow_threshold_ms: 100
   privacy:
     anonymize_plugin_names: false
   performance:
@@ -443,6 +467,18 @@ Supports 1.7.10+ including modded servers.
 - `collectSample()`: Gather performance data for plugins
 - `setupSpigotProfiling()`: Wrap listeners for Spigot
 - `shutdown()`: Unwrap listeners and cleanup
+
+### ChunkProfiler.java
+**Purpose:** Profiles chunk load/unload events
+- `onChunkLoadStart()` / `onChunkLoadEnd()`: Measures chunk load times per plugin.
+- `onChunkUnloadStart()` / `onChunkUnloadEnd()`: Measures chunk unload times per plugin.
+- `flushAndReset()`: Formats and clears profiling data for the event batch.
+
+### CommandProfiler.java
+**Purpose:** Detects and profiles slow commands execution
+- `onCommandStart()`: Records the start time of command execution.
+- `onCommandEnd()`: Calculates command duration and records event if threshold is exceeded.
+- `pruneStaleTimings()`: Cleans up orphaned timings to prevent memory leaks.
 
 ### ConfigManager.java
 **Purpose:** Configuration wrapper
@@ -580,7 +616,7 @@ Jules should read these files for context:
 ## Current Feature Status
 
 ### ✅ Implemented
-- Event capture (PLAYER_JOIN, PLAYER_QUIT, TPS_SAMPLE, TICK_PROFILE)
+- Event capture (PLAYER_JOIN, PLAYER_QUIT, TPS_SAMPLE, TICK_PROFILE, CHUNK_PROFILE, SLOW_COMMAND)
 - Hostname attribution with caching
 - Cross-version TPS detection (Paper/Spigot/Manual)
 - HTTP batching with OkHttp
@@ -591,6 +627,8 @@ Jules should read these files for context:
 - Debug logging
 - Java 8 compatibility
 - Tick Profiling (Paper/Spigot hybrid)
+- Chunk Profiling
+- Command Profiling
 
 ### ❌ Not Yet Implemented
 - Event queue size limits (prevent memory leaks)

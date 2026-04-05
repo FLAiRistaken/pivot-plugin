@@ -7,6 +7,8 @@ Real-time analytics and performance monitoring for Minecraft servers. Pivot help
 - **Player Analytics:** Track joins, quits, sessions, and retention cohorts.
 - **Performance Monitoring:** Real-time TPS tracking and player count correlation.
 - **Plugin Profiling:** Analyze plugin impact on server ticks (Paper/Spigot hybrid support).
+- **Chunk Profiling:** Measure plugin impact on chunk load and unload events.
+- **Command Profiling:** Detect and log slow command executions.
 - **Server Lifecycle Events:** Track server starts, stops, and uptime.
 - **Privacy Focused:** Optional UUID hashing and hostname tracking controls.
 - **Cross-Version:** Supports Spigot/Paper 1.8.8 through 1.21+.
@@ -49,6 +51,12 @@ privacy:
 profiling:
   enabled: true
   mode: auto                  # auto | paper_only | custom_only
+  chunk_profiling:
+    enabled: false
+    overhead_threshold_ms: 0.5
+  command_profiling:
+    enabled: false
+    slow_threshold_ms: 100
   privacy:
     anonymize_plugin_names: false # Hash plugin names in reports
   performance:

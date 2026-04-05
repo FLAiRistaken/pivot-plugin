@@ -72,6 +72,9 @@ public class ChunkProfiler implements Listener {
         this.overheadThresholdMs = plugin.getConfig().getDouble("profiling.chunk_profiling.overhead_threshold_ms", 0.5);
     }
 
+    /**
+     * Disables the chunk profiler.
+     */
     public void disable() {
         this.enabled = false;
     }
@@ -106,12 +109,22 @@ public class ChunkProfiler implements Listener {
         }
     }
 
+    /**
+     * Records the start time of a chunk load event.
+     *
+     * @param event The ChunkLoadEvent
+     */
     @EventHandler(priority = EventPriority.LOWEST)
     public void onChunkLoadStart(ChunkLoadEvent event) {
         if (!enabled) return;
         loadStartStack.get().push(System.nanoTime());
     }
 
+    /**
+     * Records the end time of a chunk load event and attributes duration to active plugins.
+     *
+     * @param event The ChunkLoadEvent
+     */
     @EventHandler(priority = EventPriority.MONITOR)
     public void onChunkLoadEnd(ChunkLoadEvent event) {
         if (!enabled) return;
@@ -163,12 +176,22 @@ public class ChunkProfiler implements Listener {
         checkOverhead(System.nanoTime() - startOverhead);
     }
 
+    /**
+     * Records the start time of a chunk unload event.
+     *
+     * @param event The ChunkUnloadEvent
+     */
     @EventHandler(priority = EventPriority.LOWEST)
     public void onChunkUnloadStart(ChunkUnloadEvent event) {
         if (!enabled) return;
         unloadStartStack.get().push(System.nanoTime());
     }
 
+    /**
+     * Records the end time of a chunk unload event and attributes duration to active plugins.
+     *
+     * @param event The ChunkUnloadEvent
+     */
     @EventHandler(priority = EventPriority.MONITOR)
     public void onChunkUnloadEnd(ChunkUnloadEvent event) {
         if (!enabled) return;
@@ -216,6 +239,13 @@ public class ChunkProfiler implements Listener {
         checkOverhead(System.nanoTime() - startOverhead);
     }
 
+    /**
+     * Formats and clears profiling data for the event batch.
+     * <p>
+     * Drains the accumulated metrics directly into a JSON structure, ensuring thread safety
+     * without blocking incoming event threads.
+     * </p>
+     */
     public void flushAndReset() {
         // Fast path: skip all map allocations when disabled and no events have been recorded.
         // Event handlers only accumulate counts when enabled=true, so this peek is safe.
@@ -293,6 +323,11 @@ public class ChunkProfiler implements Listener {
         eventCollector.addProfilingEvent(event);
     }
 
+    /**
+     * Checks if the chunk profiler is enabled.
+     *
+     * @return {@code true} if enabled, {@code false} otherwise.
+     */
     public boolean isEnabled() {
         return enabled;
     }

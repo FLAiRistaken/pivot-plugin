@@ -74,6 +74,9 @@ public class CommandProfiler implements Listener {
         this.slowThresholdMs = plugin.getConfig().getDouble("profiling.command_profiling.slow_threshold_ms", 100.0);
     }
 
+    /**
+     * Disables the command profiler and clears active timings.
+     */
     public void disable() {
         this.enabled = false;
         this.activeTimings.clear();
@@ -92,6 +95,11 @@ public class CommandProfiler implements Listener {
         this.enabled = globalEnabled && commandEnabled;
     }
 
+    /**
+     * Records the start time of a command execution.
+     *
+     * @param event The PlayerCommandPreprocessEvent
+     */
     @EventHandler(priority = EventPriority.LOWEST)
     public void onCommandStart(PlayerCommandPreprocessEvent event) {
         if (!enabled) return;
@@ -112,6 +120,11 @@ public class CommandProfiler implements Listener {
             new CommandTiming(commandLabel, clock.getAsLong(), tps, playersOnline));
     }
 
+    /**
+     * Calculates command duration and records a SLOW_COMMAND event if the threshold is exceeded.
+     *
+     * @param event The PlayerCommandPreprocessEvent
+     */
     @EventHandler(priority = EventPriority.MONITOR)
     public void onCommandEnd(PlayerCommandPreprocessEvent event) {
         if (!enabled) return;
@@ -177,6 +190,11 @@ public class CommandProfiler implements Listener {
         }
     }
 
+    /**
+     * Checks if the command profiler is enabled.
+     *
+     * @return {@code true} if enabled, {@code false} otherwise.
+     */
     public boolean isEnabled() {
         return enabled;
     }
