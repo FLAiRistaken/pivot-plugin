@@ -5,30 +5,30 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import okhttp3.*;
 
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Objects;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.TimeUnit;
 import java.util.logging.Logger;
 
 /**
  * Collects and batches events for sending to the Pivot API.
  * <p>
- * This class uses {@link java.util.concurrent.ConcurrentLinkedQueue} to store events
- * efficiently without blocking the main server thread. Events are flushed periodically
+ * This class uses {@link java.util.concurrent.ConcurrentLinkedQueue} to store
+ * events
+ * efficiently without blocking the main server thread. Events are flushed
+ * periodically
  * by an asynchronous task in {@link PivotPlugin}.
  * </p>
  * <p>
  * <b>Bolt Optimizations:</b>
  * <ul>
- *   <li>Uses non-blocking queues to avoid main thread contention.</li>
- *   <li>Defers heavy operations (like UUID hashing) to the async flush task.</li>
- *   <li>Drains queues directly to JSON arrays to minimize allocations.</li>
+ * <li>Uses non-blocking queues to avoid main thread contention.</li>
+ * <li>Defers heavy operations (like UUID hashing) to the async flush task.</li>
+ * <li>Drains queues directly to JSON arrays to minimize allocations.</li>
  * </ul>
  * </p>
  */
@@ -39,11 +39,13 @@ public class EventCollector {
     private volatile String apiKey;
 
     // Added for Phase 3A
-    // volatile ensures cross-thread visibility: setTickProfiler() may be called from the main thread
+    // volatile ensures cross-thread visibility: setTickProfiler() may be called
+    // from the main thread
     // while flush() runs on an async task thread.
     private volatile TickProfiler tickProfiler;
 
-    // ⚡ Bolt Optimization: Use ConcurrentLinkedQueue to avoid blocking main thread with locks
+    // ⚡ Bolt Optimization: Use ConcurrentLinkedQueue to avoid blocking main thread
+    // with locks
     private final Queue<PlayerEventData> playerEvents = new ConcurrentLinkedQueue<>();
     private final Queue<PerformanceEventData> performanceEvents = new ConcurrentLinkedQueue<>();
     private final Queue<ServerEventData> serverEvents = new ConcurrentLinkedQueue<>();
@@ -51,7 +53,8 @@ public class EventCollector {
 
     private ApiClient apiClient;
 
-    // ⚡ Bolt Optimization: Reuse MessageDigest to prevent object instantiation overhead during async flush
+    // ⚡ Bolt Optimization: Reuse MessageDigest to prevent object instantiation
+    // overhead during async flush
     private static final ThreadLocal<MessageDigest> SHA256_DIGEST = ThreadLocal.withInitial(() -> {
         try {
             return MessageDigest.getInstance("SHA-256");
@@ -63,8 +66,10 @@ public class EventCollector {
     /**
      * Initializes the EventCollector.
      * <p>
-     * Sets up the OkHttpClient with strict timeouts (15s) to prevent resource exhaustion.
+     * Sets up the OkHttpClient with strict timeouts (15s) to prevent resource
+     * exhaustion.
      * </p>
+     * 
      * @param plugin The main plugin instance
      */
     public EventCollector(PivotPlugin plugin) {
@@ -76,7 +81,8 @@ public class EventCollector {
     }
 
     /**
-     * Package-private constructor for testing, allowing injection of a custom {@link OkHttpClient}.
+     * Package-private constructor for testing, allowing injection of a custom
+     * {@link OkHttpClient}.
      *
      * @param plugin     The main plugin instance
      * @param httpClient The HTTP client to use for outgoing requests
@@ -90,9 +96,11 @@ public class EventCollector {
         this.apiKey = plugin.getApiKey();
 
         // SECURITY: Validate API key format (High Priority)
-        // This ensures the collector doesn't run with an invalid key even if PivotPlugin validation was bypassed
+        // This ensures the collector doesn't run with an invalid key even if
+        // PivotPlugin validation was bypassed
         if (!PivotPlugin.isValidApiKeyFormat(this.apiKey)) {
-            logger.warning("EventCollector initialized with invalid API key (must start with 'pvt_', be >= 20 chars, and alphanumeric/hyphens). Events will NOT be sent.");
+            logger.warning(
+                    "EventCollector initialized with invalid API key (must start with 'pvt_', be >= 20 chars, and alphanumeric/hyphens). Events will NOT be sent.");
             this.apiKey = null; // Disable sending
         }
 
@@ -137,12 +145,14 @@ public class EventCollector {
         // SECURITY: Validate API key format on reload
         if (!PivotPlugin.isValidApiKeyFormat(trimmedKey)) {
             logger.warning("EventCollector reload: Invalid API key. Keeping previous key (if valid) or disabling.");
-            // We could keep old key, or disable. Disabling is safer to avoid confusion if config is broken.
+            // We could keep old key, or disable. Disabling is safer to avoid confusion if
+            // config is broken.
             this.apiKey = null;
         } else {
             this.apiKey = trimmedKey;
         }
-        if (this.apiClient != null) this.apiClient.reload();
+        if (this.apiClient != null)
+            this.apiClient.reload();
     }
 
     /**
@@ -174,13 +184,15 @@ public class EventCollector {
      * @param sessionClean   Whether the session ended cleanly (optional).
      * @param connectionType The type of connection ("initial" or "reconnect").
      */
-    public void addPlayerEvent(String eventType, String playerUuid, String playerName, String hostname, String quitReason, Boolean sessionClean, String connectionType) {
+    public void addPlayerEvent(String eventType, String playerUuid, String playerName, String hostname,
+            String quitReason, Boolean sessionClean, String connectionType) {
         // Only add hostname if tracking enabled and not null
         boolean trackHostnames = plugin.getConfig().getBoolean("privacy.track-hostnames", true);
         String finalHostname = (trackHostnames && hostname != null && !hostname.isEmpty()) ? hostname : null;
 
         // ⚡ Bolt Optimization: Use POJO to avoid JsonObject creation on main thread
-        playerEvents.add(new PlayerEventData(eventType, playerUuid, playerName, finalHostname, quitReason, sessionClean, connectionType));
+        playerEvents.add(new PlayerEventData(eventType, playerUuid, playerName, finalHostname, quitReason, sessionClean,
+                connectionType));
     }
 
     /**
@@ -219,7 +231,8 @@ public class EventCollector {
     /**
      * Add a server start event to the queue.
      *
-     * @param serverVersion The version string of the server (e.g., "git-Paper-123").
+     * @param serverVersion The version string of the server (e.g.,
+     *                      "git-Paper-123").
      * @param pluginsLoaded The number of plugins currently loaded.
      */
     public void addServerStartEvent(String serverVersion, int pluginsLoaded) {
@@ -263,13 +276,15 @@ public class EventCollector {
     /**
      * Flush all collected events to the API.
      * <p>
-     * Drains event queues, anonymizes player data (if enabled), builds a JSON payload,
+     * Drains event queues, anonymizes player data (if enabled), builds a JSON
+     * payload,
      * and sends it to the Pivot API. By collecting events in queues and flushing
      * them periodically, we batch network requests and minimize API overhead.
      * </p>
      * <p>
      * <b>Threading:</b> Normally invoked by a periodic async background task, so
-     * anonymization (SHA-256 hashing) and JSON construction run off the main thread.
+     * anonymization (SHA-256 hashing) and JSON construction run off the main
+     * thread.
      * However, this method is also called synchronously on the main thread from
      * {@code PivotPlugin.onDisable()} for a final drain on shutdown, so heavy work
      * may occasionally run on the main thread during that path.
@@ -285,14 +300,18 @@ public class EventCollector {
 
         /*
          * Batching Pattern Logic:
-         * 1. This flush() method is called periodically by an async background task during normal
-         *    operation, but it may also be invoked synchronously on the main thread during
-         *    PivotPlugin.onDisable() for a final drain on shutdown.
+         * 1. This flush() method is called periodically by an async background task
+         * during normal
+         * operation, but it may also be invoked synchronously on the main thread during
+         * PivotPlugin.onDisable() for a final drain on shutdown.
          * 2. It drains events from concurrent queues directly into Gson JsonArrays.
-         * 3. Costly operations such as UUID hashing are performed here; during the normal
-         *    async flush path these run off the main thread, but during the onDisable() path
-         *    they may run on the main thread.
-         * 4. The arrays are consolidated into a single JSON payload to minimize API calls and network overhead.
+         * 3. Costly operations such as UUID hashing are performed here; during the
+         * normal
+         * async flush path these run off the main thread, but during the onDisable()
+         * path
+         * they may run on the main thread.
+         * 4. The arrays are consolidated into a single JSON payload to minimize API
+         * calls and network overhead.
          */
 
         // Collect Tick Profile
@@ -302,7 +321,8 @@ public class EventCollector {
         }
 
         // ⚡ Bolt Optimization: Early return if queues empty to avoid allocations
-        if (playerEvents.isEmpty() && performanceEvents.isEmpty() && serverEvents.isEmpty() && tickProfileEvent == null && profilingEvents.isEmpty()) {
+        if (playerEvents.isEmpty() && performanceEvents.isEmpty() && serverEvents.isEmpty() && tickProfileEvent == null
+                && profilingEvents.isEmpty()) {
             if (debugEnabled) {
                 logger.info("No events to send");
             }
@@ -325,8 +345,10 @@ public class EventCollector {
                 try {
                     hashedUuid = hashUuid(polledEvent.playerUuid);
                 } catch (RuntimeException e) {
-                    // RuntimeException is the only exception hashUuid() can throw: the SHA256_DIGEST
-                    // ThreadLocal initializer wraps NoSuchAlgorithmException in a plain RuntimeException.
+                    // RuntimeException is the only exception hashUuid() can throw: the
+                    // SHA256_DIGEST
+                    // ThreadLocal initializer wraps NoSuchAlgorithmException in a plain
+                    // RuntimeException.
                     // SECURITY: Fail secure - if hashing fails, do not send raw UUID
                     logger.severe("SHA-256 hashing failed during anonymization: " + e.getMessage());
                     hashedUuid = "ANONYMIZATION_FAILED";
@@ -338,10 +360,14 @@ public class EventCollector {
                 event.addProperty("player_name", polledEvent.playerName);
             }
 
-            if (polledEvent.hostname != null) event.addProperty("hostname", polledEvent.hostname);
-            if (polledEvent.quitReason != null) event.addProperty("quit_reason", polledEvent.quitReason);
-            if (polledEvent.sessionClean != null) event.addProperty("session_clean", polledEvent.sessionClean);
-            if (polledEvent.connectionType != null) event.addProperty("connection_type", polledEvent.connectionType);
+            if (polledEvent.hostname != null)
+                event.addProperty("hostname", polledEvent.hostname);
+            if (polledEvent.quitReason != null)
+                event.addProperty("quit_reason", polledEvent.quitReason);
+            if (polledEvent.sessionClean != null)
+                event.addProperty("session_clean", polledEvent.sessionClean);
+            if (polledEvent.connectionType != null)
+                event.addProperty("connection_type", polledEvent.connectionType);
 
             playerArray.add(event);
         }
@@ -374,11 +400,13 @@ public class EventCollector {
         }
 
         if (debugEnabled) {
-            logger.info("Events to send - Player: " + playerArray.size() + ", Performance: " + perfArray.size() + ", Server: " + serverArray.size());
+            logger.info("Events to send - Player: " + playerArray.size() + ", Performance: " + perfArray.size()
+                    + ", Server: " + serverArray.size());
         }
 
         // Nothing to send (double check)
-        if (playerArray.size() == 0 && perfArray.size() == 0 && serverArray.size() == 0 && tickProfileEvent == null && profilingArray.size() == 0) {
+        if (playerArray.size() == 0 && perfArray.size() == 0 && serverArray.size() == 0 && tickProfileEvent == null
+                && profilingArray.size() == 0) {
             return;
         }
 
@@ -394,9 +422,9 @@ public class EventCollector {
         }
 
         if (tickProfileEvent != null) {
-             JsonArray tpArray = new JsonArray();
-             tpArray.add(tickProfileEvent);
-             payload.add("tick_profile_events", tpArray);
+            JsonArray tpArray = new JsonArray();
+            tpArray.add(tickProfileEvent);
+            payload.add("tick_profile_events", tpArray);
         }
 
         String json = payload.toString();
@@ -422,22 +450,28 @@ public class EventCollector {
      * </p>
      *
      * @param json The raw JSON payload string.
-     * @return A string representation of the JSON with PII fields replaced by {@code [REDACTED]}.
+     * @return A string representation of the JSON with PII fields replaced by
+     *         {@code [REDACTED]}.
      */
     private String redactPii(String json) {
         try {
             JsonObject obj = com.google.gson.JsonParser.parseString(json).getAsJsonObject();
             if (obj.has("player_events")) {
                 JsonArray players = obj.getAsJsonArray("player_events");
-                // Need to clone or rebuild to avoid modifying the original array if we were modifying objects in place
+                // Need to clone or rebuild to avoid modifying the original array if we were
+                // modifying objects in place
                 // But parseString creates a NEW structure, so we are safe to modify 'obj'
                 for (com.google.gson.JsonElement e : players) {
                     if (e.isJsonObject()) {
                         JsonObject p = e.getAsJsonObject();
-                        if (p.has("player_uuid")) p.addProperty("player_uuid", "[REDACTED]");
-                        if (p.has("player_name")) p.addProperty("player_name", "[REDACTED]");
-                        if (p.has("hostname")) p.addProperty("hostname", "[REDACTED]");
-                        if (p.has("quit_reason")) p.addProperty("quit_reason", "[REDACTED]");
+                        if (p.has("player_uuid"))
+                            p.addProperty("player_uuid", "[REDACTED]");
+                        if (p.has("player_name"))
+                            p.addProperty("player_name", "[REDACTED]");
+                        if (p.has("hostname"))
+                            p.addProperty("hostname", "[REDACTED]");
+                        if (p.has("quit_reason"))
+                            p.addProperty("quit_reason", "[REDACTED]");
                     }
                 }
             }
@@ -462,7 +496,8 @@ public class EventCollector {
         final Boolean sessionClean;
         final String connectionType;
 
-        PlayerEventData(String eventType, String playerUuid, String playerName, String hostname, String quitReason, Boolean sessionClean, String connectionType) {
+        PlayerEventData(String eventType, String playerUuid, String playerName, String hostname, String quitReason,
+                Boolean sessionClean, String connectionType) {
             this.timestamp = System.currentTimeMillis();
             this.eventType = eventType;
             this.playerUuid = playerUuid;
