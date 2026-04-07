@@ -429,6 +429,9 @@ public class PivotPlugin extends JavaPlugin {
             eventCollector.setTickProfiler(tickProfiler);
         }
 
+        // Recreate ConfigSnapshotReporter so it references the new TickProfiler
+        this.configSnapshotReporter = new ConfigSnapshotReporter(this, eventCollector, tickProfiler, chunkProfiler);
+
         // Cancel existing tasks
         if (tpsTask != null) {
             tpsTask.cancel();
