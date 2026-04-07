@@ -277,17 +277,13 @@ public class ChunkProfiler implements Listener {
             p.addProperty("name", name);
             p.addProperty("version", version != null ? version : "unknown");
 
-            if (countLoad > 0) {
-                p.addProperty("avg_load_time_ms", Math.round(avgLoad * 100.0) / 100.0);
-                p.addProperty("max_load_time_ms", Math.round(maxLoad * 100.0) / 100.0);
-                p.addProperty("total_load_events", countLoad);
-            }
+            p.addProperty("avg_load_time_ms", Math.round(avgLoad * 100.0) / 100.0);
+            p.addProperty("max_load_time_ms", Math.round(maxLoad * 100.0) / 100.0);
+            p.addProperty("total_load_events", countLoad);
 
-            if (countUnload > 0) {
-                p.addProperty("avg_unload_time_ms", Math.round(avgUnload * 100.0) / 100.0);
-                p.addProperty("max_unload_time_ms", Math.round(maxUnload * 100.0) / 100.0);
-                p.addProperty("total_unload_events", countUnload);
-            }
+            p.addProperty("avg_unload_time_ms", Math.round(avgUnload * 100.0) / 100.0);
+            p.addProperty("max_unload_time_ms", Math.round(maxUnload * 100.0) / 100.0);
+            p.addProperty("total_unload_events", countUnload);
 
             pluginsArray.add(p);
         }
