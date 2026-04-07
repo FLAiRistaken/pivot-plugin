@@ -37,6 +37,10 @@ public class TickProfiler {
     private String mode;
     private volatile boolean autoDisabled = false;
 
+    public boolean isAutoDisabled() {
+        return autoDisabled;
+    }
+
     // Paper Timings state (reserved for future full implementation)
     private Class<?> timingsManagerClass;
     private Field handlersField;

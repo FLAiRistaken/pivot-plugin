@@ -61,6 +61,7 @@ public class ChunkProfiler implements Listener {
     private final AtomicInteger processedChunks = new AtomicInteger(0);
 
     private volatile boolean enabled = true;
+    private volatile boolean autoDisabled = false;
     private final double overheadThresholdMs;
 
     public ChunkProfiler(PivotPlugin plugin, EventCollector eventCollector) {
@@ -87,6 +88,7 @@ public class ChunkProfiler implements Listener {
         boolean globalEnabled = plugin.getConfig().getBoolean("profiling.enabled", true);
         boolean chunkEnabled = plugin.getConfig().getBoolean("profiling.chunk_profiling.enabled", false);
         this.enabled = globalEnabled && chunkEnabled;
+        this.autoDisabled = false;
     }
 
     private void checkOverhead(long overhead) {
@@ -102,6 +104,7 @@ public class ChunkProfiler implements Listener {
             if (avgOverheadMs > overheadThresholdMs) {
                 plugin.getLogger().warning("ChunkProfiler auto-disabled: overhead exceeded " + overheadThresholdMs + "ms threshold (Avg: " + String.format("%.3f", avgOverheadMs) + "ms).");
                 this.enabled = false;
+                this.autoDisabled = true;
             }
         }
     }
@@ -291,6 +294,10 @@ public class ChunkProfiler implements Listener {
 
         event.add("plugins", pluginsArray);
         eventCollector.addProfilingEvent(event);
+    }
+
+    public boolean isAutoDisabled() {
+        return autoDisabled;
     }
 
     public boolean isEnabled() {

@@ -33,6 +33,7 @@ public class PivotPlugin extends JavaPlugin {
     private TickProfiler tickProfiler;
     private ChunkProfiler chunkProfiler;
     private CommandProfiler commandProfiler;
+    private ConfigSnapshotReporter configSnapshotReporter;
 
     // ⚡ Bolt Optimization: Cache player count to avoid main thread blocking
     private final AtomicInteger onlinePlayerCount = new AtomicInteger(0);
@@ -91,6 +92,8 @@ public class PivotPlugin extends JavaPlugin {
         commandProfiler = new CommandProfiler(this, eventCollector);
         getServer().getPluginManager().registerEvents(chunkProfiler, this);
         getServer().getPluginManager().registerEvents(commandProfiler, this);
+
+        this.configSnapshotReporter = new ConfigSnapshotReporter(this, eventCollector, tickProfiler, chunkProfiler);
 
 
         // Register event listener (only if collection enabled)
@@ -349,6 +352,7 @@ public class PivotPlugin extends JavaPlugin {
         flushTask = new BukkitRunnable() {
             @Override
             public void run() {
+                if (configSnapshotReporter != null) configSnapshotReporter.maybeEmitSnapshot();
                 if (chunkProfiler != null) chunkProfiler.flushAndReset();
                 eventCollector.flush();
                 lastEventSentTime = System.currentTimeMillis();
