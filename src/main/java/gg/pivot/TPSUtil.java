@@ -38,10 +38,11 @@ public class TPSUtil {
     private static boolean initialized = false;
 
     // Manual TPS calculation (works on ALL Bukkit versions)
-    private static final Deque<Long> tickTimes = new ArrayDeque<>();
-    private static long lastTickTime = 0;
     private static final int SAMPLE_SIZE = 100; // Average over 100 ticks (~5 seconds)
-    private static double calculatedTPS = 20.0;
+    private static final long[] tickTimes = new long[SAMPLE_SIZE];
+    private static int tickIndex = 0;
+    private static int tickCount = 0;
+    private static long lastTickTime = 0;
 
     /**
      * Initialize TPS detection - call once on plugin enable.
@@ -123,11 +124,11 @@ public class TPSUtil {
             long tickDuration = currentTime - lastTickTime;
 
             synchronized (tickTimes) {
-                tickTimes.addLast(tickDuration);
-
-                // Keep only last SAMPLE_SIZE measurements
-                if (tickTimes.size() > SAMPLE_SIZE) {
-                    tickTimes.removeFirst();
+                // ⚡ Bolt: Use primitive array to avoid Long autoboxing allocation on every tick
+                tickTimes[tickIndex] = tickDuration;
+                tickIndex = (tickIndex + 1) % SAMPLE_SIZE;
+                if (tickCount < SAMPLE_SIZE) {
+                    tickCount++;
                 }
 
                 // ⚡ Bolt Optimization: Don't calculate TPS every tick on main thread
@@ -186,14 +187,14 @@ public class TPSUtil {
          */
         synchronized (tickTimes) {
             // ⚡ Bolt Optimization: Calculate on demand instead of every tick
-            if (tickTimes.size() < 20) {
+            if (tickCount < 20) {
                 return 20.0;
             }
             long sum = 0;
-            for (long duration : tickTimes) {
-                sum += duration;
+            for (int i = 0; i < tickCount; i++) {
+                sum += tickTimes[i];
             }
-            long avgTickNanos = sum / tickTimes.size();
+            long avgTickNanos = sum / tickCount;
 
             // Convert to TPS (1 second = 1,000,000,000 nanoseconds)
             // Target: 50ms per tick = 20 TPS
@@ -214,7 +215,7 @@ public class TPSUtil {
             return "Spigot (reflection)";
         } else {
             synchronized (tickTimes) {
-                return String.format("Manual calculation (%d samples)", tickTimes.size());
+                return String.format("Manual calculation (%d samples)", tickCount);
             }
         }
     }
