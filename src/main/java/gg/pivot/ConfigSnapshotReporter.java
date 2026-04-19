@@ -80,12 +80,12 @@ public class ConfigSnapshotReporter {
         json.addProperty("perf_max_overhead_ms", config.getDouble("profiling.performance.max_overhead_ms", 0.2));
         json.addProperty("perf_auto_disable_on_overhead", config.getBoolean("profiling.performance.auto_disable_on_overhead", true));
 
-        json.addProperty("unimplemented_sampling_duration_seconds", config.getInt("profiling.sampling.duration_seconds", 30));
-        json.addProperty("unimplemented_sampling_interval_minutes", config.getInt("profiling.sampling.interval_minutes", 5));
-        json.addProperty("unimplemented_triggers_auto_profile_on_lag", config.getBoolean("profiling.triggers.auto_profile_on_lag", true));
-        json.addProperty("unimplemented_triggers_lag_threshold_tps", config.getDouble("profiling.triggers.lag_threshold_tps", 18.0));
-        json.addProperty("unimplemented_privacy_share_anonymous_data", config.getBoolean("profiling.privacy.share_anonymous_data", true));
-        json.addProperty("unimplemented_anonymize_plugin_names", config.getBoolean("profiling.privacy.anonymize_plugin_names", false));
+        json.addProperty("sampling_duration_seconds", config.getInt("profiling.sampling.duration_seconds", 30));
+        json.addProperty("sampling_interval_minutes", config.getInt("profiling.sampling.interval_minutes", 5));
+        json.addProperty("triggers_auto_profile_on_lag", config.getBoolean("profiling.triggers.auto_profile_on_lag", true));
+        json.addProperty("triggers_lag_threshold_tps", config.getDouble("profiling.triggers.lag_threshold_tps", 18.0));
+        json.addProperty("privacy_share_anonymous_data", config.getBoolean("profiling.privacy.share_anonymous_data", true));
+        json.addProperty("anonymize_plugin_names", config.getBoolean("profiling.privacy.anonymize_plugin_names", false));
 
         eventCollector.addProfilingEvent(json);
     }
