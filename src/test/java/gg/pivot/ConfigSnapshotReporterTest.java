@@ -141,12 +141,12 @@ public class ConfigSnapshotReporterTest {
         assertEquals(0.2, json.get("perf_max_overhead_ms").getAsDouble());
         assertTrue(json.get("perf_auto_disable_on_overhead").getAsBoolean());
 
-        assertEquals(30, json.get("sampling_duration_seconds").getAsInt());
-        assertEquals(5, json.get("sampling_interval_minutes").getAsInt());
-        assertTrue(json.get("triggers_auto_profile_on_lag").getAsBoolean());
-        assertEquals(18.0, json.get("triggers_lag_threshold_tps").getAsDouble());
-        assertTrue(json.get("privacy_share_anonymous_data").getAsBoolean());
-        assertFalse(json.get("anonymize_plugin_names").getAsBoolean());
+        assertEquals(30, json.get("unimplemented_sampling_duration_seconds").getAsInt());
+        assertEquals(5, json.get("unimplemented_sampling_interval_minutes").getAsInt());
+        assertTrue(json.get("unimplemented_triggers_auto_profile_on_lag").getAsBoolean());
+        assertEquals(18.0, json.get("unimplemented_triggers_lag_threshold_tps").getAsDouble());
+        assertTrue(json.get("unimplemented_privacy_share_anonymous_data").getAsBoolean());
+        assertFalse(json.get("unimplemented_anonymize_plugin_names").getAsBoolean());
 
         // Verify getConfig was called at emit time
         verify(plugin, times(1)).getConfig();

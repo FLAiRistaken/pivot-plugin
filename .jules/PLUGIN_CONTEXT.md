@@ -450,6 +450,10 @@ Supports 1.7.10+ including modded servers.
 - `getProfilingMode()`: Get profiling mode (auto/paper/custom)
 - `getMaxOverheadMs()`: Get performance safety limits
 
+### ConfigSnapshotReporter.java
+**Purpose:** Sends periodic reports containing the plugin's configuration state.
+- Unimplemented configuration options are prefixed with `unimplemented_` in the generated JSON payload.
+
 ---
 
 ## Common Pitfalls

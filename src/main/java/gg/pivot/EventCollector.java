@@ -127,6 +127,11 @@ public class EventCollector {
         profilingEvents.add(event);
     }
 
+    /**
+     * Get current profiling event queue size.
+     *
+     * @return Number of queued profiling events.
+     */
     public int getProfilingEventCount() {
         return profilingEvents.size();
     }
@@ -439,6 +444,11 @@ public class EventCollector {
         apiClient.sendToAPI(json);
     }
 
+    /**
+     * Gets the API client used by this collector.
+     *
+     * @return The {@link ApiClient} instance.
+     */
     public ApiClient getApiClient() {
         return apiClient;
     }

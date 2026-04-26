@@ -20,6 +20,12 @@ public class ApiClient {
 
     private static final int[] BACKOFF_SECONDS = {5, 10, 20, 40};
 
+    /**
+     * Initializes the ApiClient with the main plugin instance and HTTP client.
+     *
+     * @param plugin     The main plugin instance.
+     * @param httpClient The OkHttpClient instance to use for API requests.
+     */
     public ApiClient(PivotPlugin plugin, OkHttpClient httpClient) {
         this.plugin = plugin;
         this.logger = plugin.getLogger();
@@ -27,10 +33,18 @@ public class ApiClient {
         this.apiKey = plugin.getApiKey();
     }
 
+    /**
+     * Reloads the API key from the plugin configuration.
+     */
     public void reload() {
         this.apiKey = plugin.getApiKey();
     }
 
+    /**
+     * Gets the timestamp of the last successful API event batch sent.
+     *
+     * @return The timestamp in milliseconds since epoch, or 0 if no successful send.
+     */
     public long getLastSuccessfulSendAt() {
         return lastSuccessfulSendAt.get();
     }
@@ -60,6 +74,12 @@ public class ApiClient {
                 .build();
     }
 
+    /**
+     * Sends an event batch to the Pivot API asynchronously.
+     * Includes automatic retries with exponential backoff on failure.
+     *
+     * @param json The JSON payload to send.
+     */
     public void sendToAPI(String json) {
         sendToAPI(json, 0);
     }
@@ -167,6 +187,13 @@ public class ApiClient {
         }.runTaskLaterAsynchronously(plugin, delayTicks);
     }
 
+    /**
+     * Sends an event batch to the Pivot API synchronously.
+     * This will block the calling thread until a response is received.
+     *
+     * @param json The JSON payload to send.
+     * @throws IOException If the request could not be executed due to a network error.
+     */
     public void sendToAPISync(String json) throws IOException {
         Request request = buildRequest(json);
         if (request == null) return;
@@ -197,6 +224,13 @@ public class ApiClient {
         }
     }
 
+    /**
+     * Redacts sensitive information such as the API key from a string.
+     *
+     * @param text   The text to redact.
+     * @param apiKey The active API key to filter out.
+     * @return The redacted text.
+     */
     public static String redactSensitiveInfo(String text, String apiKey) {
         if (text == null) return "null";
         String redacted = text;
