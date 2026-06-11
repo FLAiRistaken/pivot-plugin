@@ -23,3 +23,4 @@ dependency-reduced-pom.xml
 # Config files with secrets (if testing locally)
 src/main/resources/config-local.yml
 /test-server
+.token-savior-cache.json
