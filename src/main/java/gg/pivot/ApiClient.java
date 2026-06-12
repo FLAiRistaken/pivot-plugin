@@ -205,7 +205,7 @@ public class ApiClient {
             redacted = redacted.replace(apiKey, "[REDACTED]");
         }
 
-        redacted = redacted.replaceAll("pvt_[a-zA-Z0-9_]{10,}", "pvt_***");
+        redacted = redacted.replaceAll("pvt_[a-zA-Z0-9_\\-]{10,}", "pvt_***");
 
         return redacted;
     }
