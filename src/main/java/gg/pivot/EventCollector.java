@@ -427,13 +427,14 @@ public class EventCollector {
             JsonObject event = new JsonObject();
             event.addProperty("timestamp", serverInfoEvent.timestamp);
             event.addProperty("event_type", "SERVER_INFO");
-            event.addProperty("minecraft_version", serverInfoEvent.minecraftVersion);
-            event.addProperty("server_fork", serverInfoEvent.serverFork);
-            event.addProperty("java_version", serverInfoEvent.javaVersion);
-            event.addProperty("os_name", serverInfoEvent.osName);
-            event.addProperty("allocated_ram_mb", serverInfoEvent.allocatedRamMb);
-            event.addProperty("cpu_cores", serverInfoEvent.cpuCores);
-            event.addProperty("pivot_plugin_version", serverInfoEvent.pivotPluginVersion);
+            JsonObject data = new JsonObject();
+            data.addProperty("minecraft_version", serverInfoEvent.minecraftVersion);
+            data.addProperty("server_fork", serverInfoEvent.serverFork);
+            data.addProperty("java_version", serverInfoEvent.javaVersion);
+            data.addProperty("os_name", serverInfoEvent.osName);
+            data.addProperty("allocated_ram_mb", serverInfoEvent.allocatedRamMb);
+            data.addProperty("cpu_cores", serverInfoEvent.cpuCores);
+            data.addProperty("pivot_plugin_version", serverInfoEvent.pivotPluginVersion);
             JsonArray pluginsArray = new JsonArray();
             for (ServerInfoEventData.PluginInfo pi : serverInfoEvent.installedPlugins) {
                 JsonObject pluginObj = new JsonObject();
@@ -441,7 +442,8 @@ public class EventCollector {
                 pluginObj.addProperty("version", pi.version);
                 pluginsArray.add(pluginObj);
             }
-            event.add("installed_plugins", pluginsArray);
+            data.add("installed_plugins", pluginsArray);
+            event.add("data", data);
             serverArray.add(event);
         }
 
