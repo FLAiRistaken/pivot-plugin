@@ -49,6 +49,7 @@ public class EventCollector {
     private final Queue<PlayerEventData> playerEvents = new ConcurrentLinkedQueue<>();
     private final Queue<PerformanceEventData> performanceEvents = new ConcurrentLinkedQueue<>();
     private final Queue<ServerEventData> serverEvents = new ConcurrentLinkedQueue<>();
+    private final Queue<ServerInfoEventData> serverInfoEvents = new ConcurrentLinkedQueue<>();
     private final Queue<JsonObject> profilingEvents = new ConcurrentLinkedQueue<>();
 
     private ApiClient apiClient;
@@ -241,6 +242,34 @@ public class EventCollector {
     }
 
     /**
+     * Add a SERVER_INFO event to the queue.
+     *
+     * @param plugin The plugin instance used to collect server metadata.
+     */
+    public void addServerInfoEvent(PivotPlugin plugin) {
+        org.bukkit.Server server = org.bukkit.Bukkit.getServer();
+        String minecraftVersion = server.getBukkitVersion();
+        String serverFork = server.getName();
+        String javaVersion = System.getProperty("java.version");
+        String osName = System.getProperty("os.name");
+        long allocatedRamMb = Runtime.getRuntime().maxMemory() / 1048576L;
+        int cpuCores = Runtime.getRuntime().availableProcessors();
+        String pivotVersion = plugin.getDescription().getVersion();
+
+        org.bukkit.plugin.Plugin[] allPlugins = server.getPluginManager().getPlugins();
+        java.util.List<ServerInfoEventData.PluginInfo> installedPlugins = new java.util.ArrayList<>();
+        for (org.bukkit.plugin.Plugin p : allPlugins) {
+            if (!p.getName().equals(plugin.getName())) {
+                installedPlugins.add(new ServerInfoEventData.PluginInfo(p.getName(), p.getDescription().getVersion()));
+            }
+        }
+
+        serverInfoEvents.add(new ServerInfoEventData(
+                minecraftVersion, serverFork, javaVersion, osName,
+                allocatedRamMb, cpuCores, pivotVersion, installedPlugins));
+    }
+
+    /**
      * Send a server stop event synchronously.
      * <p>
      * This is called during plugin disable. It bypasses the async queue to ensure
@@ -321,7 +350,8 @@ public class EventCollector {
         }
 
         // ⚡ Bolt Optimization: Early return if queues empty to avoid allocations
-        if (playerEvents.isEmpty() && performanceEvents.isEmpty() && serverEvents.isEmpty() && tickProfileEvent == null
+        if (playerEvents.isEmpty() && performanceEvents.isEmpty() && serverEvents.isEmpty()
+                && serverInfoEvents.isEmpty() && tickProfileEvent == null
                 && profilingEvents.isEmpty()) {
             if (debugEnabled) {
                 logger.info("No events to send");
@@ -392,6 +422,28 @@ public class EventCollector {
             event.addProperty("plugins_loaded", serverEvent.pluginsLoaded);
             serverArray.add(event);
         }
+        ServerInfoEventData serverInfoEvent;
+        while ((serverInfoEvent = serverInfoEvents.poll()) != null) {
+            JsonObject event = new JsonObject();
+            event.addProperty("timestamp", serverInfoEvent.timestamp);
+            event.addProperty("event_type", "SERVER_INFO");
+            event.addProperty("minecraft_version", serverInfoEvent.minecraftVersion);
+            event.addProperty("server_fork", serverInfoEvent.serverFork);
+            event.addProperty("java_version", serverInfoEvent.javaVersion);
+            event.addProperty("os_name", serverInfoEvent.osName);
+            event.addProperty("allocated_ram_mb", serverInfoEvent.allocatedRamMb);
+            event.addProperty("cpu_cores", serverInfoEvent.cpuCores);
+            event.addProperty("pivot_plugin_version", serverInfoEvent.pivotPluginVersion);
+            JsonArray pluginsArray = new JsonArray();
+            for (ServerInfoEventData.PluginInfo pi : serverInfoEvent.installedPlugins) {
+                JsonObject pluginObj = new JsonObject();
+                pluginObj.addProperty("name", pi.name);
+                pluginObj.addProperty("version", pi.version);
+                pluginsArray.add(pluginObj);
+            }
+            event.add("installed_plugins", pluginsArray);
+            serverArray.add(event);
+        }
 
         JsonArray profilingArray = new JsonArray();
         JsonObject pe;
@@ -406,7 +458,7 @@ public class EventCollector {
 
         // Nothing to send (double check)
         if (playerArray.size() == 0 && perfArray.size() == 0 && serverArray.size() == 0 && tickProfileEvent == null
-                && profilingArray.size() == 0) {
+                && profilingArray.size() == 0 && serverInfoEvents.isEmpty()) {
             return;
         }
 
@@ -530,6 +582,42 @@ public class EventCollector {
             this.timestamp = System.currentTimeMillis();
             this.serverVersion = serverVersion;
             this.pluginsLoaded = pluginsLoaded;
+        }
+    }
+
+    private static class ServerInfoEventData {
+        final long timestamp;
+        final String minecraftVersion;
+        final String serverFork;
+        final String javaVersion;
+        final String osName;
+        final long allocatedRamMb;
+        final int cpuCores;
+        final String pivotPluginVersion;
+        final java.util.List<PluginInfo> installedPlugins;
+
+        ServerInfoEventData(String minecraftVersion, String serverFork, String javaVersion,
+                String osName, long allocatedRamMb, int cpuCores, String pivotPluginVersion,
+                java.util.List<PluginInfo> installedPlugins) {
+            this.timestamp = System.currentTimeMillis();
+            this.minecraftVersion = minecraftVersion;
+            this.serverFork = serverFork;
+            this.javaVersion = javaVersion;
+            this.osName = osName;
+            this.allocatedRamMb = allocatedRamMb;
+            this.cpuCores = cpuCores;
+            this.pivotPluginVersion = pivotPluginVersion;
+            this.installedPlugins = installedPlugins;
+        }
+
+        static class PluginInfo {
+            final String name;
+            final String version;
+
+            PluginInfo(String name, String version) {
+                this.name = name;
+                this.version = version;
+            }
         }
     }
 }
