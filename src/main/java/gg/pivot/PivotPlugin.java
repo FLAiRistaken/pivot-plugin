@@ -119,6 +119,18 @@ public class PivotPlugin extends JavaPlugin {
             eventCollector.addServerStartEvent(serverVersion, pluginsLoaded);
         }
 
+        // Send SERVER_INFO immediately and repeat every 6 hours asynchronously
+        final long sixHourTicks = 6L * 60 * 60 * 20;
+        new org.bukkit.scheduler.BukkitRunnable() {
+            @Override
+            public void run() {
+                if (eventCollector != null) {
+                    eventCollector.addServerInfoEvent(PivotPlugin.this);
+                    eventCollector.flush();
+                }
+            }
+        }.runTaskTimerAsynchronously(this, 0L, sixHourTicks);
+
         logger.info("Pivot Analytics enabled successfully!");
         logger.info("Version: " + getDescription().getVersion());
     }
