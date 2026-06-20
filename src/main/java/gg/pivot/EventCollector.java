@@ -186,14 +186,14 @@ public class EventCollector {
      * @param connectionType The type of connection ("initial" or "reconnect").
      */
     public void addPlayerEvent(String eventType, String playerUuid, String playerName, String hostname,
-            String quitReason, Boolean sessionClean, String connectionType) {
+            String quitReason, Boolean sessionClean, String connectionType, String clientVersion) {
         // Only add hostname if tracking enabled and not null
         boolean trackHostnames = plugin.getConfig().getBoolean("privacy.track-hostnames", true);
         String finalHostname = (trackHostnames && hostname != null && !hostname.isEmpty()) ? hostname : null;
 
         // ⚡ Bolt Optimization: Use POJO to avoid JsonObject creation on main thread
         playerEvents.add(new PlayerEventData(eventType, playerUuid, playerName, finalHostname, quitReason, sessionClean,
-                connectionType));
+                connectionType, clientVersion));
     }
 
     /**
@@ -398,6 +398,11 @@ public class EventCollector {
                 event.addProperty("session_clean", polledEvent.sessionClean);
             if (polledEvent.connectionType != null)
                 event.addProperty("connection_type", polledEvent.connectionType);
+            if (polledEvent.clientVersion != null) {
+                JsonObject metadata = new JsonObject();
+                metadata.addProperty("client_version", polledEvent.clientVersion);
+                event.add("event_metadata", metadata);
+            }
 
             playerArray.add(event);
         }
@@ -549,9 +554,10 @@ public class EventCollector {
         final String quitReason;
         final Boolean sessionClean;
         final String connectionType;
+        final String clientVersion;
 
         PlayerEventData(String eventType, String playerUuid, String playerName, String hostname, String quitReason,
-                Boolean sessionClean, String connectionType) {
+                Boolean sessionClean, String connectionType, String clientVersion) {
             this.timestamp = System.currentTimeMillis();
             this.eventType = eventType;
             this.playerUuid = playerUuid;
@@ -560,6 +566,7 @@ public class EventCollector {
             this.quitReason = quitReason;
             this.sessionClean = sessionClean;
             this.connectionType = connectionType;
+            this.clientVersion = clientVersion;
         }
     }
 
