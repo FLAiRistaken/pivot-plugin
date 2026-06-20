@@ -102,6 +102,8 @@ public class EventListener implements Listener {
         String connectionType = seenPlayers.contains(playerId) ? "reconnect" : "initial";
         seenPlayers.add(playerId);
 
+        String clientVersion = getClientVersion(event.getPlayer());
+
         plugin.getEventCollector().addPlayerEvent(
                 "PLAYER_JOIN",
                 event.getPlayer().getUniqueId().toString(),
@@ -109,7 +111,8 @@ public class EventListener implements Listener {
                 hostname,
                 null,
                 null,
-                connectionType
+                connectionType,
+                clientVersion
         );
 
         if (plugin.getConfig().getBoolean("debug.enabled", false)) {
@@ -181,11 +184,35 @@ public class EventListener implements Listener {
                 null,
                 reason,
                 sessionClean,
+                null,
                 null
         );
 
         if (plugin.getConfig().getBoolean("debug.enabled", false)) {
             plugin.getLogger().info("Player quit: " + event.getPlayer().getName() + " (" + reason + ")");
         }
+    }
+
+    /**
+     * Gets the client version string using ViaVersion if available.
+     */
+    private String getClientVersion(org.bukkit.entity.Player player) {
+        if (org.bukkit.Bukkit.getPluginManager().getPlugin("ViaVersion") != null) {
+            try {
+                return getViaVersionUnsafe(player);
+            } catch (Throwable t) {
+                // Ignore errors to ensure join events aren't disrupted
+            }
+        }
+        return null;
+    }
+
+    private String getViaVersionUnsafe(org.bukkit.entity.Player player) {
+        int protocol = com.viaversion.viaversion.api.Via.getAPI().getPlayerVersion(player.getUniqueId());
+        com.viaversion.viaversion.api.protocol.version.ProtocolVersion version = com.viaversion.viaversion.api.protocol.version.ProtocolVersion.getProtocol(protocol);
+        if (version != null) {
+            return version.getName();
+        }
+        return null;
     }
 }
