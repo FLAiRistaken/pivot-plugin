@@ -119,17 +119,29 @@ public class PivotPlugin extends JavaPlugin {
             eventCollector.addServerStartEvent(serverVersion, pluginsLoaded);
         }
 
-        // Send SERVER_INFO immediately and repeat every 6 hours asynchronously
+        // Send SERVER_INFO immediately and repeat every 6 hours.
+        // getPlugins() is main-thread-only: snapshot the plugin list on the main thread,
+        // then hand off the HTTP send to an async task.
         final long sixHourTicks = 6L * 60 * 60 * 20;
         new org.bukkit.scheduler.BukkitRunnable() {
             @Override
             public void run() {
-                if (eventCollector != null) {
-                    eventCollector.addServerInfoEvent(PivotPlugin.this);
-                    eventCollector.flush();
+                if (eventCollector == null) {
+                    return;
                 }
+                // This timer fires on the main thread so getPlugins() is safe here.
+                eventCollector.addServerInfoEvent(PivotPlugin.this);
+                // Flush (network I/O) must happen off the main thread.
+                new org.bukkit.scheduler.BukkitRunnable() {
+                    @Override
+                    public void run() {
+                        if (eventCollector != null) {
+                            eventCollector.flush();
+                        }
+                    }
+                }.runTaskAsynchronously(PivotPlugin.this);
             }
-        }.runTaskTimerAsynchronously(this, 0L, sixHourTicks);
+        }.runTaskTimer(this, 0L, sixHourTicks);
 
         logger.info("Pivot Analytics enabled successfully!");
         logger.info("Version: " + getDescription().getVersion());
