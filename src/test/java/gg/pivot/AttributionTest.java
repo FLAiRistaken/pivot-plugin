@@ -70,7 +70,8 @@ public class AttributionTest {
                 hostnameCaptor.capture(),
                 isNull(),
                 isNull(),
-                anyString()
+                anyString(),
+                isNull()
         );
 
         assertEquals("tiktok.pivot.gg", hostnameCaptor.getValue(), "Hostname should be captured from virtual host");
@@ -96,7 +97,8 @@ public class AttributionTest {
                 hostnameCaptor.capture(),
                 isNull(),
                 isNull(),
-                anyString()
+                anyString(),
+                isNull()
         );
 
         assertEquals("tiktok.pivot.gg", hostnameCaptor.getValue(), "Port should be stripped from virtual host");
@@ -125,7 +127,8 @@ public class AttributionTest {
                 hostnameCaptor.capture(),
                 isNull(),
                 isNull(),
-                anyString()
+                anyString(),
+                isNull()
         );
 
         assertEquals("play.pivot.gg", hostnameCaptor.getValue(), "Hostname should fallback to configured default when null");
@@ -154,7 +157,8 @@ public class AttributionTest {
                 hostnameCaptor.capture(),
                 isNull(),
                 isNull(),
-                anyString()
+                anyString(),
+                isNull()
         );
 
         assertEquals("play.pivot.gg", hostnameCaptor.getValue(), "Hostname should fallback to configured default when empty");
