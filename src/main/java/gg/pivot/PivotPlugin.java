@@ -23,6 +23,18 @@ import java.util.logging.Logger;
  * </p>
  */
 public class PivotPlugin extends JavaPlugin {
+    /**
+     * Fallback for {@code collection.batch-interval} when the key is absent. Matches the shipped
+     * config.yml; installs that already have a config.yml keep whatever it says.
+     */
+    public static final int DEFAULT_BATCH_INTERVAL_SECONDS = 30;
+
+    /**
+     * Total time onDisable may spend on the network (SERVER_STOP plus the final flush). It runs on
+     * the main thread, so this bounds how long a slow or unreachable API can stall shutdown.
+     */
+    static final long SHUTDOWN_BUDGET_MS = 3000L;
+
     private Logger logger;
     private EventCollector eventCollector;
     private BukkitTask tpsTask;
@@ -153,6 +165,8 @@ public class PivotPlugin extends JavaPlugin {
      */
     @Override
     public void onDisable() {
+        long deadlineNanos = System.nanoTime() + SHUTDOWN_BUDGET_MS * 1_000_000L;
+
         // Shutdown TickProfiler first to restore the original scheduler (Spigot mode)
         if (tickProfiler != null) {
             tickProfiler.shutdown();
@@ -161,9 +175,9 @@ public class PivotPlugin extends JavaPlugin {
             commandProfiler.disable();
         }
 
-        // Send SERVER_STOP event synchronously
+        // Send SERVER_STOP event synchronously (a missing stop reads as a crash to the backend)
         if (eventCollector != null) {
-            eventCollector.sendServerStopEvent("manual");
+            eventCollector.sendServerStopEvent("manual", remainingMillis(deadlineNanos));
         }
 
         // Cancel running tasks
@@ -174,17 +188,22 @@ public class PivotPlugin extends JavaPlugin {
             flushTask.cancel();
         }
 
-        // Flush any remaining events
+        // Flush any remaining events, then release the HTTP client's threads and connections
         if (eventCollector != null) {
             logger.info("Flushing remaining events before shutdown...");
             if (chunkProfiler != null) {
                 chunkProfiler.flushAndReset();
                 chunkProfiler.disable();
             }
-            eventCollector.flush();
+            eventCollector.flushBlocking(remainingMillis(deadlineNanos));
+            eventCollector.shutdown();
         }
 
         logger.info("Pivot Analytics disabled. Goodbye!");
+    }
+
+    private static long remainingMillis(long deadlineNanos) {
+        return Math.max(0L, (deadlineNanos - System.nanoTime()) / 1_000_000L);
     }
 
     /**
@@ -195,7 +214,7 @@ public class PivotPlugin extends JavaPlugin {
      * <li>Valid API key format (starts with 'pvt_', length >= 20,
      * alphanumeric).</li>
      * <li>Valid API endpoint (HTTPS required).</li>
-     * <li>Sane collection intervals (batch interval > TPS interval).</li>
+     * <li>Sane collection intervals (TPS interval no longer than the batch interval).</li>
      * </ul>
      * </p>
      *
@@ -227,7 +246,7 @@ public class PivotPlugin extends JavaPlugin {
         }
 
         // Validate intervals
-        int batchInterval = getConfig().getInt("collection.batch-interval", 60);
+        int batchInterval = getConfig().getInt("collection.batch-interval", DEFAULT_BATCH_INTERVAL_SECONDS);
         int tpsInterval = getConfig().getInt("collection.tps-sample-interval", 30);
 
         if (batchInterval <= 0) {
@@ -242,8 +261,9 @@ public class PivotPlugin extends JavaPlugin {
             valid = false;
         }
 
-        if (tpsInterval >= batchInterval) {
-            logger.warning("tps-sample-interval (" + tpsInterval + "s) should be less than batch-interval ("
+        // Equal is fine (about one sample per batch); only a longer TPS interval would skip batches.
+        if (tpsInterval > batchInterval) {
+            logger.warning("tps-sample-interval (" + tpsInterval + "s) should not exceed batch-interval ("
                     + batchInterval + "s)");
         }
 
@@ -278,7 +298,7 @@ public class PivotPlugin extends JavaPlugin {
         logger.info("  API Endpoint: " + (endpoint != null ? endpoint : "NOT CONFIGURED"));
         logger.info("  API Key: " + maskedKey);
         logger.info("  Collection Enabled: " + getConfig().getBoolean("collection.enabled", true));
-        logger.info("  Batch Interval: " + getConfig().getInt("collection.batch-interval", 60) + "s");
+        logger.info("  Batch Interval: " + getConfig().getInt("collection.batch-interval", DEFAULT_BATCH_INTERVAL_SECONDS) + "s");
         logger.info("  TPS Sample Interval: " + getConfig().getInt("collection.tps-sample-interval", 30) + "s");
         logger.info("  Track Hostnames: " + getConfig().getBoolean("privacy.track-hostnames", true));
 
@@ -363,7 +383,7 @@ public class PivotPlugin extends JavaPlugin {
         long tpsIntervalTicks = tpsIntervalSeconds * 20L;
 
         // Batch flush interval
-        int batchIntervalSeconds = getConfig().getInt("collection.batch-interval", 60);
+        int batchIntervalSeconds = getConfig().getInt("collection.batch-interval", DEFAULT_BATCH_INTERVAL_SECONDS);
         long batchIntervalTicks = batchIntervalSeconds * 20L;
 
         // Start TPS monitoring task

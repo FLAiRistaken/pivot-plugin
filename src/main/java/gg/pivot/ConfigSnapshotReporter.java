@@ -49,7 +49,7 @@ public class ConfigSnapshotReporter {
         json.addProperty("minecraft_version", plugin.getServer().getVersion());
         json.addProperty("api_endpoint", plugin.getApiEndpoint());
         json.addProperty("collection_enabled", config.getBoolean("collection.enabled", true));
-        json.addProperty("collection_batch_interval_seconds", config.getInt("collection.batch-interval", 60));
+        json.addProperty("collection_batch_interval_seconds", config.getInt("collection.batch-interval", PivotPlugin.DEFAULT_BATCH_INTERVAL_SECONDS));
         json.addProperty("collection_track_player_events", config.getBoolean("collection.track-player-events", true));
         json.addProperty("collection_track_performance", config.getBoolean("collection.track-performance", true));
         json.addProperty("collection_tps_sample_interval_seconds", config.getInt("collection.tps-sample-interval", 30));

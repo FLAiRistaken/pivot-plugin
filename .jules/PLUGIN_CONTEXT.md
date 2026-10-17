@@ -315,7 +315,7 @@ api:
 
 collection:
   enabled: true
-  batch-interval: 60          # Seconds between API sends
+  batch-interval: 30          # Seconds between API sends
   track-player-events: true
   track-performance: true
   tps-sample-interval: 30     # Seconds between TPS samples
@@ -343,7 +343,7 @@ debug:
 ```java
 // Nested path
 String apiKey = plugin.getConfig().getString("api.key");
-int batchInterval = plugin.getConfig().getInt("collection.batch-interval", 60);
+int batchInterval = plugin.getConfig().getInt("collection.batch-interval", PivotPlugin.DEFAULT_BATCH_INTERVAL_SECONDS);
 boolean debugEnabled = plugin.getConfig().getBoolean("debug.enabled", false);
 
 // ConfigManager usage
@@ -372,7 +372,7 @@ boolean profilingEnabled = config.isProfilingEnabled();
   - Lazy TPS calculation and cached server instances
 
 ### Batching Pattern
-The plugin minimizes network and CPU impact by batching events over a configured interval (`collection.batch-interval`, default 60s).
+The plugin minimizes network and CPU impact by batching events over a configured interval (`collection.batch-interval`, default 30s).
 - **Queuing:** Events (player, server, performance) are typically enqueued from synchronous Bukkit handlers on the main server thread into non-blocking concurrent queues, keeping per-event overhead minimal.
 - **Flushing:** A background async task periodically calls `EventCollector.flush()`, which safely drains these queues off the main thread. Data is drained directly into Gson `JsonArray`s to avoid intermediate list allocations.
 - **Anonymization:** Expensive operations like UUID hashing via SHA-256 are performed during the asynchronous flush phase, explicitly avoiding any lag on the main server thread. Note: `flush()` is also called synchronously during `PivotPlugin.onDisable()`, so hashing may occur on the main thread during plugin shutdown.
@@ -662,7 +662,7 @@ mvn dependency:tree
 ```java
 plugin.getConfig().getString("api.endpoint")
 plugin.getConfig().getString("api.key")
-plugin.getConfig().getInt("collection.batch-interval", 60)
+plugin.getConfig().getInt("collection.batch-interval", PivotPlugin.DEFAULT_BATCH_INTERVAL_SECONDS)
 plugin.getConfig().getBoolean("privacy.track-hostnames", true)
 plugin.getConfig().getBoolean("debug.enabled", false)
 ```
