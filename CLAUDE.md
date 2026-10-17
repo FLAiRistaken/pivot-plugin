@@ -23,6 +23,10 @@ Bukkit/Spigot/Paper plugin (`PivotAnalytics`) that collects player + performance
 - **No player IPs — ever.** Use `PlayerLoginEvent.getHostname()` (the server connect-host) → `HostnameDetector.detectHostname` (strips port). **Do not** call `player.getAddress()` / `event.getRealAddress()` or store any player IP, including direct-IP-join edge cases.
 - **SLOW_COMMAND captures the command NAME only.** `CommandProfiler` takes `message.substring(0, firstSpace)` and discards arguments — keep it that way (args can contain passwords, e.g. `/login`). Never send full command text.
 - **UUID anonymization:** honor `privacy.anonymize-players` (SHA-256 hash) where implemented.
+- **Chunk profiling is whole-chain, never per plugin.** `ChunkProfiler` reports the LOWEST-to-MONITOR time of each chunk event plus the *list* of plugins that have a chunk listener. Bukkit gives no per-listener timing, so never divide or attribute it to a plugin (an equal split looks like a measurement and is not one). Pair starts and ends by event instance; the MONITOR handler must always take its start before checking `enabled`.
+- **Shutdown is bounded.** `onDisable` runs on the main thread: SERVER_STOP and the final flush share `PivotPlugin.SHUTDOWN_BUDGET_MS` (3s) and use `ApiClient.sendToAPISync(json, timeoutMs)`; then `EventCollector.shutdown()` stops the OkHttp dispatcher and pool. Don't add other blocking network calls there.
+- **Batches carry a `batch_id`** (UUID per flush, reused on every retry of that payload) so the backend can drop a replay. Generate it in `EventCollector`, not in `ApiClient`.
+- **Batch interval default is `PivotPlugin.DEFAULT_BATCH_INTERVAL_SECONDS` (30)**; keep it equal to `config.yml` (`ConfigDefaultsTest` checks).
 - **Permissions:** keep `plugin.yml` minimal — only `pivot.admin` (default `op`). Don't request Bukkit perms the plugin doesn't need.
 - **Event handlers** on `PlayerLoginEvent` use `EventPriority.MONITOR, ignoreCancelled = true` (Paper warns otherwise).
 

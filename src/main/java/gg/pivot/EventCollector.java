@@ -11,6 +11,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Objects;
 import java.util.Queue;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.logging.Logger;
 
@@ -279,6 +280,19 @@ public class EventCollector {
      * @param reason The reason for the stop (usually "manual").
      */
     public void sendServerStopEvent(String reason) {
+        sendServerStopEvent(reason, PivotPlugin.SHUTDOWN_BUDGET_MS);
+    }
+
+    /**
+     * Same as {@link #sendServerStopEvent(String)} but gives up after {@code timeoutMs}.
+     *
+     * @param timeoutMs time left in the shutdown budget; nothing is sent when it is not positive
+     */
+    public void sendServerStopEvent(String reason, long timeoutMs) {
+        if (timeoutMs <= 0) {
+            logger.warning("No time left in the shutdown budget; SERVER_STOP not sent.");
+            return;
+        }
         JsonObject event = new JsonObject();
         event.addProperty("timestamp", System.currentTimeMillis());
         event.addProperty("event_type", "SERVER_STOP");
@@ -294,7 +308,7 @@ public class EventCollector {
 
         // Send synchronously
         try {
-            apiClient.sendToAPISync(payload.toString());
+            apiClient.sendToAPISync(payload.toString(), timeoutMs);
         } catch (IOException e) {
             // SECURITY: Redact sensitive info (API key) from exception message
             String errorMsg = e.getMessage() != null ? e.getMessage() : "Unknown error";
@@ -320,6 +334,44 @@ public class EventCollector {
      * </p>
      */
     public void flush() {
+        String json = buildBatchJson();
+        if (json != null) {
+            apiClient.sendToAPI(json);
+        }
+    }
+
+    /**
+     * Final flush for shutdown: builds the batch and sends it synchronously, giving up after
+     * {@code timeoutMs} so a slow API cannot stall the server. No retries; whatever does not get
+     * through in time is dropped.
+     *
+     * @param timeoutMs time left in the shutdown budget; nothing is sent when it is not positive
+     */
+    public void flushBlocking(long timeoutMs) {
+        String json = buildBatchJson();
+        if (json == null) {
+            return;
+        }
+        if (timeoutMs <= 0) {
+            logger.warning("No time left in the shutdown budget; dropping the final batch.");
+            return;
+        }
+        try {
+            apiClient.sendToAPISync(json, timeoutMs);
+        } catch (IOException e) {
+            // SECURITY: Redact sensitive info (API key) from exception message
+            String errorMsg = e.getMessage() != null ? e.getMessage() : "Unknown error";
+            logger.warning("Failed to send final batch: " + ApiClient.redactSensitiveInfo(errorMsg, this.apiKey));
+        }
+    }
+
+    /** Releases the HTTP client's threads and connections. Call once, from onDisable. */
+    public void shutdown() {
+        apiClient.shutdown();
+    }
+
+    /** Drains the queues into one JSON batch, or returns null when there is nothing to send. */
+    private String buildBatchJson() {
         boolean debugEnabled = plugin.getConfig().getBoolean("debug.enabled", false);
         boolean logBatches = plugin.getConfig().getBoolean("debug.log-batches", false);
 
@@ -356,7 +408,7 @@ public class EventCollector {
             if (debugEnabled) {
                 logger.info("No events to send");
             }
-            return;
+            return null;
         }
 
         // ⚡ Bolt Optimization: Drain directly to JsonArray and anonymize async
@@ -466,12 +518,15 @@ public class EventCollector {
         // Nothing to send (double check)
         if (playerArray.size() == 0 && perfArray.size() == 0 && serverArray.size() == 0 && tickProfileEvent == null
                 && profilingArray.size() == 0 && serverInfoEvents.isEmpty()) {
-            return;
+            return null;
         }
 
         // Build JSON payload
         JsonObject payload = new JsonObject();
         payload.addProperty("batch_timestamp", System.currentTimeMillis());
+        // Same id on every retry of this batch (ApiClient resends this exact string), so the
+        // backend can drop a replay whose first attempt it already committed.
+        payload.addProperty("batch_id", UUID.randomUUID().toString());
         payload.add("player_events", playerArray);
         payload.add("performance_events", perfArray);
         payload.add("server_events", serverArray);
@@ -494,8 +549,7 @@ public class EventCollector {
             logger.info("Sending batch payload: " + redactPii(json));
         }
 
-        // Send to API
-        apiClient.sendToAPI(json);
+        return json;
     }
 
     public ApiClient getApiClient() {

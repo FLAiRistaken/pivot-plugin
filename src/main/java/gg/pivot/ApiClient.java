@@ -5,6 +5,7 @@ import org.bukkit.Bukkit;
 import org.bukkit.scheduler.BukkitRunnable;
 
 import java.io.IOException;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.logging.Logger;
 
@@ -90,14 +91,14 @@ public class ApiClient {
                     String usedApiKey = call.request().header("X-API-Key");
                     if (response.isSuccessful()) {
                         String apiVersion = response.header("X-API-Version");
-                        logger.info("Connected to Pivot API version: " + apiVersion);
+                        logger.fine("Connected to Pivot API version: " + apiVersion);
                         String responseBody = "no body";
                         try {
                             if (response.body() != null) responseBody = response.body().string();
                         } catch (IOException e) {
                             logger.warning("Failed to read response body: " + e.getMessage());
                         }
-                        logger.info("Successfully sent events: " + redactSensitiveInfo(responseBody, usedApiKey));
+                        logger.fine("Successfully sent events: " + redactSensitiveInfo(responseBody, usedApiKey));
                         lastSuccessfulSendAt.set(System.currentTimeMillis());
                     } else {
                         String errorBody = "no error details";
@@ -168,33 +169,60 @@ public class ApiClient {
     }
 
     public void sendToAPISync(String json) throws IOException {
+        sendToAPISync(json, 0L);
+    }
+
+    /**
+     * Sends a batch on the calling thread and waits for the response. No retries.
+     *
+     * @param json      the payload
+     * @param timeoutMs overall limit for the call (DNS, connect, write, server time and read);
+     *                  0 uses the client's own timeouts. Used on shutdown, where the main thread
+     *                  is waiting.
+     */
+    public void sendToAPISync(String json, long timeoutMs) throws IOException {
         Request request = buildRequest(json);
         if (request == null) return;
 
         String usedApiKey = request.header("X-API-Key");
 
-        try (Response response = httpClient.newCall(request).execute()) {
+        Call call = httpClient.newCall(request);
+        if (timeoutMs > 0) {
+            call.timeout().timeout(timeoutMs, TimeUnit.MILLISECONDS);
+        }
+
+        try (Response response = call.execute()) {
             if (response.isSuccessful()) {
                 String apiVersion = response.header("X-API-Version");
-                logger.info("Connected to Pivot API version: " + apiVersion);
+                logger.fine("Connected to Pivot API version: " + apiVersion);
                 String responseBody = "no body";
-                        try {
-                            if (response.body() != null) responseBody = response.body().string();
-                        } catch (IOException e) {
-                            logger.warning("Failed to read response body: " + e.getMessage());
-                        }
-                logger.info("Successfully sent events: " + redactSensitiveInfo(responseBody, usedApiKey));
+                try {
+                    if (response.body() != null) responseBody = response.body().string();
+                } catch (IOException e) {
+                    logger.warning("Failed to read response body: " + e.getMessage());
+                }
+                logger.fine("Successfully sent events: " + redactSensitiveInfo(responseBody, usedApiKey));
                 lastSuccessfulSendAt.set(System.currentTimeMillis());
             } else {
                 String errorBody = "no error details";
-                        try {
-                            if (response.body() != null) errorBody = response.body().string();
-                        } catch (IOException e) {
-                            logger.warning("Failed to read error body: " + e.getMessage());
-                        }
+                try {
+                    if (response.body() != null) errorBody = response.body().string();
+                } catch (IOException e) {
+                    logger.warning("Failed to read error body: " + e.getMessage());
+                }
                 logger.warning("Failed to send events: " + response.code() + " - " + redactSensitiveInfo(errorBody, usedApiKey));
             }
         }
+    }
+
+    /**
+     * Stops the HTTP client's dispatcher threads and closes idle connections. Calls already in
+     * flight finish; new async calls are rejected. Without this the threads and the plugin's
+     * classloader outlive the plugin across /reload.
+     */
+    public void shutdown() {
+        httpClient.dispatcher().executorService().shutdown();
+        httpClient.connectionPool().evictAll();
     }
 
     public static String redactSensitiveInfo(String text, String apiKey) {

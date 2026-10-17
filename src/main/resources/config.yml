@@ -21,7 +21,7 @@ collection:
   # How often to send data batches (seconds)
   # Lower = more real-time, but more API calls
   # Recommended: 30-60 seconds
-  batch-interval: 60
+  batch-interval: 30
 
   # Track player join/quit events
   track-player-events: true
@@ -30,7 +30,7 @@ collection:
   track-performance: true
 
   # Sample TPS every N seconds
-  # Must be less than batch-interval
+  # Must not exceed batch-interval
   # Recommended: 30 seconds
   tps-sample-interval: 30
 

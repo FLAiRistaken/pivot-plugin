@@ -2,8 +2,10 @@ package gg.pivot;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
+import org.bukkit.event.Event;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
+import org.bukkit.event.HandlerList;
 import org.bukkit.event.Listener;
 import org.bukkit.event.world.ChunkLoadEvent;
 import org.bukkit.event.world.ChunkUnloadEvent;
@@ -14,48 +16,70 @@ import java.text.SimpleDateFormat;
 import java.util.ArrayDeque;
 import java.util.Date;
 import java.util.Deque;
-import java.util.HashMap;
-import java.util.HashSet;
 import java.util.Map;
-import java.util.Set;
 import java.util.TimeZone;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.TreeMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.LongAccumulator;
+import java.util.concurrent.atomic.LongAdder;
+import java.util.function.LongSupplier;
 
 /**
- * Profiles chunk load and unload events per plugin.
+ * Measures how long chunk load/unload events spend in the listener chain.
+ * <p>
+ * Bukkit gives no per-listener timing, so the only honest number is the time from the
+ * LOWEST to the MONITOR handler of each event: the whole chain, covering the server and
+ * every plugin listening at LOWEST..HIGHEST priority (MONITOR listeners are excluded).
+ * That total is reported per sample together with the plugins that have a chunk listener
+ * registered. It is deliberately <b>not</b> divided between plugins: an equal split looks
+ * like a per-plugin measurement and is not one.
+ * </p>
  */
 public class ChunkProfiler implements Listener {
+    // The backend rejects a whole batch if these are exceeded (ChunkPluginSample / ChunkProfileEvent).
+    static final int MAX_PLUGIN_NAME_LENGTH = 64;
+    static final int MAX_PLUGIN_VERSION_LENGTH = 32;
+    static final int MAX_LISTED_PLUGINS = 100;
+
+    /** Backstop only: a start whose MONITOR never ran. Normal depth is 1 (2+ when re-entrant). */
+    private static final int MAX_PENDING_DEPTH = 64;
+
     private final PivotPlugin plugin;
     private final EventCollector eventCollector;
+    private final LongSupplier nanoClock;
 
-    // Double-buffer accumulators: swapped atomically on flush to avoid races
-    // between main-thread producers and async flush consumer.
-    private final AtomicReference<ConcurrentHashMap<String, Double>> pluginTotalLoadTimeMs =
-            new AtomicReference<>(new ConcurrentHashMap<>());
-    private final AtomicReference<ConcurrentHashMap<String, Double>> pluginMaxLoadTimeMs =
-            new AtomicReference<>(new ConcurrentHashMap<>());
-    private final AtomicReference<ConcurrentHashMap<String, Integer>> pluginLoadEventCount =
-            new AtomicReference<>(new ConcurrentHashMap<>());
-    private final AtomicReference<ConcurrentHashMap<String, String>> pluginVersions =
-            new AtomicReference<>(new ConcurrentHashMap<>());
+    /** One sample window. Swapped atomically on flush so producers and the flush never race on a half-reset window. */
+    private static final class Window {
+        final LongAdder loaded = new LongAdder();
+        final LongAdder loadNanos = new LongAdder();
+        final LongAccumulator loadMaxNanos = new LongAccumulator(Math::max, 0L);
+        final LongAdder unloaded = new LongAdder();
+        final LongAdder unloadNanos = new LongAdder();
+        final LongAccumulator unloadMaxNanos = new LongAccumulator(Math::max, 0L);
 
-    private final AtomicReference<ConcurrentHashMap<String, Double>> pluginTotalUnloadTimeMs =
-            new AtomicReference<>(new ConcurrentHashMap<>());
-    private final AtomicReference<ConcurrentHashMap<String, Double>> pluginMaxUnloadTimeMs =
-            new AtomicReference<>(new ConcurrentHashMap<>());
-    private final AtomicReference<ConcurrentHashMap<String, Integer>> pluginUnloadEventCount =
-            new AtomicReference<>(new ConcurrentHashMap<>());
+        boolean isEmpty() {
+            return loaded.sum() == 0 && unloaded.sum() == 0;
+        }
+    }
 
-    private final AtomicInteger totalChunksLoaded = new AtomicInteger(0);
-    private final AtomicInteger totalChunksUnloaded = new AtomicInteger(0);
+    private final AtomicReference<Window> window = new AtomicReference<>(new Window());
 
-    // Use a Deque (stack) so re-entrant chunk events on the same thread nest correctly:
-    // inner event pushes/pops before the outer event's MONITOR handler runs.
-    private final ThreadLocal<Deque<Long>> loadStartStack = ThreadLocal.withInitial(ArrayDeque::new);
-    private final ThreadLocal<Deque<Long>> unloadStartStack = ThreadLocal.withInitial(ArrayDeque::new);
+    /** The LOWEST-priority timestamp for an event, matched to its MONITOR handler by event instance. */
+    private static final class PendingStart {
+        final Event event;
+        final long startNanos;
+
+        PendingStart(Event event, long startNanos) {
+            this.event = event;
+            this.startNanos = startNanos;
+        }
+    }
+
+    // A stack (not a single slot) so re-entrant chunk events on the same thread nest correctly.
+    private final ThreadLocal<Deque<PendingStart>> loadStarts = ThreadLocal.withInitial(ArrayDeque::new);
+    private final ThreadLocal<Deque<PendingStart>> unloadStarts = ThreadLocal.withInitial(ArrayDeque::new);
 
     private final AtomicLong overheadNano = new AtomicLong(0);
     private final AtomicInteger processedChunks = new AtomicInteger(0);
@@ -65,8 +89,14 @@ public class ChunkProfiler implements Listener {
     private final double overheadThresholdMs;
 
     public ChunkProfiler(PivotPlugin plugin, EventCollector eventCollector) {
+        this(plugin, eventCollector, System::nanoTime);
+    }
+
+    /** Package-private so tests can drive the clock. */
+    ChunkProfiler(PivotPlugin plugin, EventCollector eventCollector, LongSupplier nanoClock) {
         this.plugin = plugin;
         this.eventCollector = eventCollector;
+        this.nanoClock = nanoClock;
         boolean globalEnabled = plugin.getConfig().getBoolean("profiling.enabled", true);
         boolean chunkEnabled = plugin.getConfig().getBoolean("profiling.chunk_profiling.enabled", false);
         this.enabled = globalEnabled && chunkEnabled;
@@ -109,133 +139,123 @@ public class ChunkProfiler implements Listener {
         }
     }
 
+    private void pushStart(Deque<PendingStart> stack, Event event) {
+        if (stack.size() >= MAX_PENDING_DEPTH) {
+            stack.clear();
+        }
+        stack.push(new PendingStart(event, nanoClock.getAsLong()));
+    }
+
+    /**
+     * Removes and returns the start recorded for {@code event}, or null if there is none.
+     * <p>
+     * Starts above it belong to events whose MONITOR handler never ran, so they are dropped.
+     * If there is no start for this event (profiling was off at LOWEST and on by MONITOR) the
+     * stack is left alone: it may hold a valid start for an outer event still in flight.
+     * </p>
+     */
+    private PendingStart takeStart(Deque<PendingStart> stack, Event event) {
+        boolean present = false;
+        for (PendingStart pending : stack) {
+            if (pending.event == event) {
+                present = true;
+                break;
+            }
+        }
+        if (!present) {
+            return null;
+        }
+        PendingStart pending;
+        do {
+            pending = stack.pop();
+        } while (pending.event != event);
+        return pending;
+    }
+
     @EventHandler(priority = EventPriority.LOWEST)
     public void onChunkLoadStart(ChunkLoadEvent event) {
         if (!enabled) return;
-        loadStartStack.get().push(System.nanoTime());
+        pushStart(loadStarts.get(), event);
     }
 
     @EventHandler(priority = EventPriority.MONITOR)
     public void onChunkLoadEnd(ChunkLoadEvent event) {
-        if (!enabled) return;
-        long end = System.nanoTime();
-        Deque<Long> stack = loadStartStack.get();
-        if (stack.isEmpty()) return;
-        long start = stack.pop();
+        long end = nanoClock.getAsLong();
+        // Always take our start first, even when disabled, so a toggle between the two
+        // handlers cannot leave a stale start behind for a later event to pick up.
+        PendingStart start = takeStart(loadStarts.get(), event);
+        if (start == null || !enabled) return;
 
-        long startOverhead = System.nanoTime();
+        long startOverhead = nanoClock.getAsLong();
 
-        long durationNano = end - start;
-        totalChunksLoaded.incrementAndGet();
+        long durationNano = Math.max(0L, end - start.startNanos);
+        Window w = window.get();
+        w.loaded.increment();
+        w.loadNanos.add(durationNano);
+        w.loadMaxNanos.accumulate(durationNano);
 
-        // Attribute duration equally to all registered listeners
-        RegisteredListener[] listeners = ChunkLoadEvent.getHandlerList().getRegisteredListeners();
-
-        // Count unique plugins
-        Map<String, Plugin> activePlugins = new HashMap<>();
-        for (RegisteredListener listener : listeners) {
-            Plugin p = listener.getPlugin();
-            if (p != null && !p.getName().equals(plugin.getName())) { // Exclude ourselves
-                activePlugins.put(p.getName(), p);
-            }
-        }
-
-        int pluginCount = activePlugins.size();
-
-        if (pluginCount > 0) {
-            double durationMs = (durationNano / 1_000_000.0) / pluginCount;
-
-            ConcurrentHashMap<String, Double> totalLoad = pluginTotalLoadTimeMs.get();
-            ConcurrentHashMap<String, Double> maxLoad = pluginMaxLoadTimeMs.get();
-            ConcurrentHashMap<String, Integer> countLoad = pluginLoadEventCount.get();
-            ConcurrentHashMap<String, String> versions = pluginVersions.get();
-
-            for (Map.Entry<String, Plugin> entry : activePlugins.entrySet()) {
-                String name = entry.getKey();
-                Plugin p = entry.getValue();
-
-                versions.putIfAbsent(name, p.getDescription().getVersion());
-                totalLoad.merge(name, durationMs, Double::sum);
-
-                maxLoad.merge(name, durationMs, (a, b) -> Math.max(a, b));
-
-                countLoad.merge(name, 1, Integer::sum);
-            }
-        }
-
-        checkOverhead(System.nanoTime() - startOverhead);
+        checkOverhead(nanoClock.getAsLong() - startOverhead);
     }
 
     @EventHandler(priority = EventPriority.LOWEST)
     public void onChunkUnloadStart(ChunkUnloadEvent event) {
         if (!enabled) return;
-        unloadStartStack.get().push(System.nanoTime());
+        pushStart(unloadStarts.get(), event);
     }
 
     @EventHandler(priority = EventPriority.MONITOR)
     public void onChunkUnloadEnd(ChunkUnloadEvent event) {
-        if (!enabled) return;
-        long end = System.nanoTime();
-        Deque<Long> stack = unloadStartStack.get();
-        if (stack.isEmpty()) return;
-        long start = stack.pop();
+        long end = nanoClock.getAsLong();
+        PendingStart start = takeStart(unloadStarts.get(), event);
+        if (start == null || !enabled) return;
 
-        long startOverhead = System.nanoTime();
+        long startOverhead = nanoClock.getAsLong();
 
-        long durationNano = end - start;
-        totalChunksUnloaded.incrementAndGet();
+        long durationNano = Math.max(0L, end - start.startNanos);
+        Window w = window.get();
+        w.unloaded.increment();
+        w.unloadNanos.add(durationNano);
+        w.unloadMaxNanos.accumulate(durationNano);
 
-        RegisteredListener[] listeners = ChunkUnloadEvent.getHandlerList().getRegisteredListeners();
+        checkOverhead(nanoClock.getAsLong() - startOverhead);
+    }
 
-        Map<String, Plugin> activePlugins = new HashMap<>();
-        for (RegisteredListener listener : listeners) {
+    /**
+     * Plugins that have a chunk load or unload listener registered right now, excluding this
+     * plugin, as name to version. Read once per flush rather than per event.
+     */
+    private Map<String, String> listeningPlugins() {
+        Map<String, String> listening = new TreeMap<>();
+        collectListeners(ChunkLoadEvent.getHandlerList(), listening);
+        collectListeners(ChunkUnloadEvent.getHandlerList(), listening);
+        return listening;
+    }
+
+    private void collectListeners(HandlerList handlers, Map<String, String> into) {
+        for (RegisteredListener listener : handlers.getRegisteredListeners()) {
             Plugin p = listener.getPlugin();
-            if (p != null && !p.getName().equals(plugin.getName())) {
-                activePlugins.put(p.getName(), p);
-            }
+            if (p == null || p.getName().equals(plugin.getName())) continue; // exclude ourselves
+            String version = p.getDescription() != null ? p.getDescription().getVersion() : null;
+            into.putIfAbsent(p.getName(), version != null ? version : "unknown");
         }
+    }
 
-        int pluginCount = activePlugins.size();
+    private static String truncate(String value, int max) {
+        return value.length() <= max ? value : value.substring(0, max);
+    }
 
-        if (pluginCount > 0) {
-            double durationMs = (durationNano / 1_000_000.0) / pluginCount;
-
-            ConcurrentHashMap<String, Double> totalUnload = pluginTotalUnloadTimeMs.get();
-            ConcurrentHashMap<String, Double> maxUnload = pluginMaxUnloadTimeMs.get();
-            ConcurrentHashMap<String, Integer> countUnload = pluginUnloadEventCount.get();
-            ConcurrentHashMap<String, String> versions = pluginVersions.get();
-
-            for (Map.Entry<String, Plugin> entry : activePlugins.entrySet()) {
-                String name = entry.getKey();
-                Plugin p = entry.getValue();
-
-                versions.putIfAbsent(name, p.getDescription().getVersion());
-                totalUnload.merge(name, durationMs, Double::sum);
-                maxUnload.merge(name, durationMs, (a, b) -> Math.max(a, b));
-                countUnload.merge(name, 1, Integer::sum);
-            }
-        }
-
-        checkOverhead(System.nanoTime() - startOverhead);
+    private static double toMs(long nanos) {
+        return Math.round((nanos / 1_000_000.0) * 100.0) / 100.0;
     }
 
     public void flushAndReset() {
-        // Fast path: skip all map allocations when disabled and no events have been recorded.
-        // Event handlers only accumulate counts when enabled=true, so this peek is safe.
-        if (!enabled && totalChunksLoaded.get() == 0 && totalChunksUnloaded.get() == 0) return;
+        // Fast path: skip all allocations when disabled and nothing has been recorded.
+        // Event handlers only record while enabled, so this peek is safe.
+        if (!enabled && window.get().isEmpty()) return;
 
-        // Atomically swap accumulator maps so main-thread producers immediately write to
-        // fresh maps while we safely process the captured snapshots.
-        ConcurrentHashMap<String, Double> capturedTotalLoad = pluginTotalLoadTimeMs.getAndSet(new ConcurrentHashMap<>());
-        ConcurrentHashMap<String, Double> capturedMaxLoad = pluginMaxLoadTimeMs.getAndSet(new ConcurrentHashMap<>());
-        ConcurrentHashMap<String, Integer> capturedCountLoad = pluginLoadEventCount.getAndSet(new ConcurrentHashMap<>());
-        ConcurrentHashMap<String, Double> capturedTotalUnload = pluginTotalUnloadTimeMs.getAndSet(new ConcurrentHashMap<>());
-        ConcurrentHashMap<String, Double> capturedMaxUnload = pluginMaxUnloadTimeMs.getAndSet(new ConcurrentHashMap<>());
-        ConcurrentHashMap<String, Integer> capturedCountUnload = pluginUnloadEventCount.getAndSet(new ConcurrentHashMap<>());
-        ConcurrentHashMap<String, String> capturedVersions = pluginVersions.getAndSet(new ConcurrentHashMap<>());
-
-        int chunksLoaded = totalChunksLoaded.getAndSet(0);
-        int chunksUnloaded = totalChunksUnloaded.getAndSet(0);
+        // Swap the window so main-thread producers immediately write to a fresh one while
+        // this thread reads the captured snapshot.
+        Window captured = window.getAndSet(new Window());
 
         JsonObject event = new JsonObject();
         event.addProperty("type", "CHUNK_PROFILE");
@@ -244,51 +264,27 @@ public class ChunkProfiler implements Listener {
         sdf.setTimeZone(TimeZone.getTimeZone("UTC"));
         event.addProperty("timestamp", sdf.format(new Date()));
 
-        int sampleDurationSeconds = plugin.getConfig().getInt("collection.batch-interval", 30);
+        int sampleDurationSeconds = plugin.getConfig().getInt("collection.batch-interval", PivotPlugin.DEFAULT_BATCH_INTERVAL_SECONDS);
         event.addProperty("sample_duration_seconds", sampleDurationSeconds);
-        event.addProperty("chunks_loaded", chunksLoaded);
-        event.addProperty("chunks_unloaded", chunksUnloaded);
+        event.addProperty("chunks_loaded", captured.loaded.sum());
+        event.addProperty("chunks_unloaded", captured.unloaded.sum());
+
+        // Whole listener-chain time for the sample (server and every plugin), not per plugin.
+        event.addProperty("load_listener_total_ms", toMs(captured.loadNanos.sum()));
+        event.addProperty("load_listener_max_ms", toMs(captured.loadMaxNanos.get()));
+        event.addProperty("unload_listener_total_ms", toMs(captured.unloadNanos.sum()));
+        event.addProperty("unload_listener_max_ms", toMs(captured.unloadMaxNanos.get()));
 
         JsonArray pluginsArray = new JsonArray();
-
-        Set<String> allPlugins = new HashSet<>();
-        allPlugins.addAll(capturedTotalLoad.keySet());
-        allPlugins.addAll(capturedTotalUnload.keySet());
-
-        for (String name : allPlugins) {
-            double totalLoad = capturedTotalLoad.getOrDefault(name, 0.0);
-            double maxLoad = capturedMaxLoad.getOrDefault(name, 0.0);
-            int countLoad = capturedCountLoad.getOrDefault(name, 0);
-
-            double totalUnload = capturedTotalUnload.getOrDefault(name, 0.0);
-            double maxUnload = capturedMaxUnload.getOrDefault(name, 0.0);
-            int countUnload = capturedCountUnload.getOrDefault(name, 0);
-
-            String version = capturedVersions.get(name);
-
-            double avgLoad = countLoad > 0 ? totalLoad / countLoad : 0;
-            double avgUnload = countUnload > 0 ? totalUnload / countUnload : 0;
-
-            if (avgLoad < 0.01 && avgUnload < 0.01) {
-                continue;
-            }
-
+        for (Map.Entry<String, String> listening : listeningPlugins().entrySet()) {
+            if (pluginsArray.size() >= MAX_LISTED_PLUGINS) break;
             JsonObject p = new JsonObject();
-            p.addProperty("name", name);
-            p.addProperty("version", version != null ? version : "unknown");
-
-            p.addProperty("avg_load_time_ms", Math.round(avgLoad * 100.0) / 100.0);
-            p.addProperty("max_load_time_ms", Math.round(maxLoad * 100.0) / 100.0);
-            p.addProperty("total_load_events", countLoad);
-
-            p.addProperty("avg_unload_time_ms", Math.round(avgUnload * 100.0) / 100.0);
-            p.addProperty("max_unload_time_ms", Math.round(maxUnload * 100.0) / 100.0);
-            p.addProperty("total_unload_events", countUnload);
-
+            p.addProperty("name", truncate(listening.getKey(), MAX_PLUGIN_NAME_LENGTH));
+            p.addProperty("version", truncate(listening.getValue(), MAX_PLUGIN_VERSION_LENGTH));
             pluginsArray.add(p);
         }
-
         event.add("plugins", pluginsArray);
+
         eventCollector.addProfilingEvent(event);
     }
 
