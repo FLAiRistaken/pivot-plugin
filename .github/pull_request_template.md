@@ -1,3 +1,6 @@
+Closes: <!-- #N, or owner/repo#N for an issue in another repo. One "Closes" per issue. Release PRs: leave blank. -->
+Phase: <!-- e.g. 3C, from pivot-docs status/roadmap.yaml. Copied from the issue as the phase: label if the PR has none. -->
+
 ## What and why
 <!-- One or two sentences. Link the brief batch, roadmap phase or plan. -->
 

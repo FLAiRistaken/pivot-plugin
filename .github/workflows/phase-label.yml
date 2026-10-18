@@ -1,0 +1,69 @@
+name: Copy phase label
+
+# Progress page habit (pivot-docs/plans/PROGRESS_PAGE_SPEC.md §3): every PR carries a phase: label.
+# When a PR has none, copy it from the issue the PR closes, or fall back to the template's "Phase:" line.
+# pull_request_target so PRs from forks can be labelled too; the PR's code is never checked out.
+
+on:
+  pull_request_target:
+    types: [opened, edited, reopened, ready_for_review, synchronize]
+
+permissions:
+  issues: write
+  pull-requests: write
+
+jobs:
+  copy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v7
+        env:
+          # Optional: lets the Action read issues in other private repos (Closes owner/repo#N).
+          READ_TOKEN: ${{ secrets.PIVOT_GITHUB_TOKEN }}
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            if (pr.labels.some((l) => l.name.toLowerCase().startsWith("phase:"))) {
+              core.info("PR already has a phase: label.");
+              return;
+            }
+            const { owner, repo } = context.repo;
+            const reader = process.env.READ_TOKEN ? getOctokit(process.env.READ_TOKEN) : github;
+            const body = (pr.body || "").replace(/<!--[\s\S]*?-->/g, " ");
+
+            // GitHub closing keywords, one per reference, optional colon ("Closes: #12").
+            const closing = /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\b:?[ \t]+(?:https:\/\/github\.com\/([\w.-]+)\/([\w.-]+)\/issues\/(\d+)|(?:([\w.-]+)\/([\w.-]+))?#(\d+))/gi;
+            const wanted = new Set();
+            for (const m of body.matchAll(closing)) {
+              const ref = m[3]
+                ? { owner: m[1], repo: m[2], issue_number: Number(m[3]) }
+                : { owner: m[4] || owner, repo: m[5] || repo, issue_number: Number(m[6]) };
+              try {
+                const client = ref.owner === owner && ref.repo === repo ? github : reader;
+                const { data } = await client.rest.issues.get(ref);
+                for (const l of data.labels) {
+                  const name = typeof l === "string" ? l : l.name;
+                  if (name && name.toLowerCase().startsWith("phase:")) wanted.add(name);
+                }
+              } catch (e) {
+                core.warning(`Couldn't read ${ref.owner}/${ref.repo}#${ref.issue_number}: ${e.message}`);
+              }
+            }
+            if (!wanted.size) {
+              const line = body.match(/^\s*Phase:\s*`?([A-Za-z0-9][A-Za-z0-9.\-]*)`?\s*$/im);
+              if (line) wanted.add(`phase:${line[1]}`);
+            }
+            if (!wanted.size) {
+              core.info("No closing reference with a phase: label and no Phase: line.");
+              return;
+            }
+
+            // Only apply labels that exist here (the progress page's label sync creates them).
+            const existing = await github.paginate(github.rest.issues.listLabelsForRepo, { owner, repo, per_page: 100 });
+            const byLower = new Map(existing.map((l) => [l.name.toLowerCase(), l.name]));
+            const labels = [...wanted].map((w) => byLower.get(w.toLowerCase())).filter(Boolean);
+            const missing = [...wanted].filter((w) => !byLower.has(w.toLowerCase()));
+            if (missing.length) core.warning(`Not in this repo's labels, skipped: ${missing.join(", ")}`);
+            if (!labels.length) return;
+            await github.rest.issues.addLabels({ owner, repo, issue_number: pr.number, labels });
+            core.info(`Added ${labels.join(", ")}`);
