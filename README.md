@@ -36,7 +36,7 @@ api:
 
 collection:
   enabled: true
-  batch-interval: 60          # Seconds between API sends
+  batch-interval: 30          # Seconds between API sends
   track-player-events: true
   track-performance: true
   tps-sample-interval: 30     # Seconds between TPS samples

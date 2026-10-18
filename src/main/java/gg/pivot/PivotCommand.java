@@ -159,7 +159,7 @@ public class PivotCommand implements CommandExecutor, TabCompleter {
 
             sender.sendMessage(ChatColor.GREEN + "✓ Configuration reloaded successfully!");
             sender.sendMessage(ChatColor.GRAY + "New intervals:");
-            sender.sendMessage("  Batch: " + plugin.getConfig().getInt("collection.batch-interval", 60) + "s");
+            sender.sendMessage("  Batch: " + plugin.getConfig().getInt("collection.batch-interval", PivotPlugin.DEFAULT_BATCH_INTERVAL_SECONDS) + "s");
             sender.sendMessage("  TPS Sample: " + plugin.getConfig().getInt("collection.tps-sample-interval", 30) + "s");
 
             // Warn if collection disabled

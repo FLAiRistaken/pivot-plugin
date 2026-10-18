@@ -18,7 +18,18 @@ import org.mockito.MockedStatic;
 
 import java.io.IOException;
 import java.lang.reflect.Method;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.logging.Handler;
+import java.util.logging.Level;
+import java.util.logging.LogRecord;
 import java.util.logging.Logger;
+
+import okio.Buffer;
+import okio.Timeout;
+import org.mockito.ArgumentCaptor;
+
+import static org.junit.jupiter.api.Assertions.*;
 
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
@@ -243,5 +254,123 @@ public class ApiClientTest {
 
             verify(scheduler, never()).runTaskLaterAsynchronously(any(), any(Runnable.class), anyLong());
         }
+    }
+
+    private static String bodyOf(Request request) throws IOException {
+        Buffer buffer = new Buffer();
+        request.body().writeTo(buffer);
+        return buffer.readUtf8();
+    }
+
+    /**
+     * A retry resends the identical payload, so a batch_id in it is the same on every attempt:
+     * the backend can recognise a replay whose first attempt it had already committed.
+     */
+    @Test
+    public void testRetryResendsTheSameBodyIncludingBatchId() throws Exception {
+        Call mockCall = mock(Call.class);
+        ArgumentCaptor<Request> requests = ArgumentCaptor.forClass(Request.class);
+        when(httpClient.newCall(requests.capture())).thenReturn(mockCall);
+        when(mockCall.request()).thenReturn(dummyRequest());
+        doAnswer(invocation -> {
+            Callback cb = invocation.getArgument(0);
+            cb.onFailure(mockCall, new IOException("timed out after the server committed"));
+            return null;
+        }).when(mockCall).enqueue(any(Callback.class));
+
+        BukkitScheduler scheduler = mock(BukkitScheduler.class);
+        ArgumentCaptor<Runnable> retry = ArgumentCaptor.forClass(Runnable.class);
+        when(scheduler.runTaskLaterAsynchronously(eq(plugin), retry.capture(), anyLong()))
+                .thenReturn(mock(BukkitTask.class));
+
+        String json = "{\"batch_id\":\"7f6c4bd8-5f0e-4a39-9f0c-6a3b2d1c9e10\",\"player_events\":[]}";
+        try (MockedStatic<Bukkit> mockedBukkit = mockStatic(Bukkit.class)) {
+            mockedBukkit.when(Bukkit::getScheduler).thenReturn(scheduler);
+
+            apiClient.sendToAPI(json);
+            retry.getValue().run();   // the scheduled retry fires
+
+            assertEquals(2, requests.getAllValues().size());
+            assertEquals(json, bodyOf(requests.getAllValues().get(0)));
+            assertEquals(json, bodyOf(requests.getAllValues().get(1)));
+        }
+    }
+
+    @Test
+    public void testSyncSendAppliesTheCallTimeout() throws Exception {
+        Call mockCall = mock(Call.class);
+        Timeout timeout = new Timeout();
+        when(httpClient.newCall(any(Request.class))).thenReturn(mockCall);
+        when(mockCall.timeout()).thenReturn(timeout);
+        when(mockCall.execute()).thenAnswer(inv -> buildResponse(dummyRequest(), 200, "{}"));
+
+        apiClient.sendToAPISync("{}", 2500L);
+
+        assertEquals(2_500_000_000L, timeout.timeoutNanos());
+        verify(mockCall).execute();
+    }
+
+    @Test
+    public void testSyncSendWithoutTimeoutKeepsClientDefaults() throws Exception {
+        Call mockCall = mock(Call.class);
+        Timeout timeout = new Timeout();
+        when(httpClient.newCall(any(Request.class))).thenReturn(mockCall);
+        when(mockCall.timeout()).thenReturn(timeout);
+        when(mockCall.execute()).thenAnswer(inv -> buildResponse(dummyRequest(), 200, "{}"));
+
+        apiClient.sendToAPISync("{}");
+
+        assertEquals(0L, timeout.timeoutNanos(), "0 must not install a call timeout");
+    }
+
+    @Test
+    public void testSuccessfulSendsLogAtFineNotInfo() throws Exception {
+        Logger logger = Logger.getLogger("test");
+        Level original = logger.getLevel();
+        List<LogRecord> records = new ArrayList<>();
+        Handler handler = new Handler() {
+            @Override public void publish(LogRecord record) { records.add(record); }
+            @Override public void flush() {}
+            @Override public void close() {}
+        };
+        handler.setLevel(Level.ALL);
+        logger.setLevel(Level.ALL);
+        logger.addHandler(handler);
+        try {
+            Call mockCall = mock(Call.class);
+            when(httpClient.newCall(any(Request.class))).thenReturn(mockCall);
+            when(mockCall.request()).thenReturn(dummyRequest());
+            when(mockCall.timeout()).thenReturn(new Timeout());
+            when(mockCall.execute()).thenAnswer(inv -> buildResponse(dummyRequest(), 200, "{\"status\":\"success\"}", "X-API-Version", "1.1.0"));
+            doAnswer(invocation -> {
+                Callback cb = invocation.getArgument(0);
+                cb.onResponse(mockCall, buildResponse(dummyRequest(), 200, "{\"status\":\"success\"}", "X-API-Version", "1.1.0"));
+                return null;
+            }).when(mockCall).enqueue(any(Callback.class));
+
+            apiClient.sendToAPI("{}");          // async path
+            apiClient.sendToAPISync("{}", 1000); // sync path
+        } finally {
+            logger.removeHandler(handler);
+            logger.setLevel(original);
+        }
+
+        long sent = records.stream().filter(r -> r.getMessage().startsWith("Successfully sent events")).count();
+        long connected = records.stream().filter(r -> r.getMessage().startsWith("Connected to Pivot API")).count();
+        assertEquals(2, sent);
+        assertEquals(2, connected);
+        assertTrue(records.stream().noneMatch(r -> r.getLevel().intValue() >= Level.INFO.intValue()),
+                "per-send logs must not reach INFO");
+    }
+
+    @Test
+    public void testShutdownStopsDispatcherAndClosesConnections() {
+        OkHttpClient real = new OkHttpClient();
+        ApiClient client = new ApiClient(plugin, real);
+
+        client.shutdown();
+
+        assertTrue(real.dispatcher().executorService().isShutdown());
+        assertEquals(0, real.connectionPool().connectionCount());
     }
 }
