@@ -6,6 +6,7 @@ Bukkit/Spigot/Paper plugin (`PivotAnalytics`) that collects player + performance
 - Build: `mvn package` (shaded jar; `dependency-reduced-pom.xml` is generated — don't edit).
 - Test: `mvn test` (JUnit + Mockito; mock `OkHttpClient` via the package-private `EventCollector`/`ApiClient` constructors).
 - Targets Spigot API; `plugin.yml` `api-version: '1.20'`.
+- **Quiet runs for agents:** `mvn -q test` and `mvn -q package`. Show full output only when diagnosing a failure; paste only failures and the test summary into PRs.
 
 ## Layout (`src/main/java/gg/pivot/`)
 - `PivotPlugin.java` — lifecycle (`onEnable`/`onDisable`), config validation, `isValidApiKeyFormat`, `getApiKey`/`getApiEndpoint`.
@@ -31,3 +32,6 @@ Bukkit/Spigot/Paper plugin (`PivotAnalytics`) that collects player + performance
 - **Event handlers** on `PlayerLoginEvent` use `EventPriority.MONITOR, ignoreCancelled = true` (Paper warns otherwise).
 
 The backend caps and validates everything (`player_name<=16`, `hostname<=255`, `command<=64`), but the plugin is the first line of defense for player privacy — uphold the invariants above regardless of backend behavior.
+
+## Code navigation (token-savior)
+If the `token-savior` MCP tools are available (local sessions on Joe's Mac), use them before Read/Grep: `find_symbol` to locate a definition, `get_function_source` / `get_class_source` instead of reading whole files, `search_codebase` to find existing code to reuse, and `get_change_impact` / `find_impacted_test_files` before editing. Fall back to Read/Grep only for non-code files or when the index can't answer. Rules: pivot-docs `current/ORCHESTRATOR_CONTEXT_V6.md` §8.
