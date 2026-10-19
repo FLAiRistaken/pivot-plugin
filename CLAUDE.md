@@ -6,6 +6,7 @@ Bukkit/Spigot/Paper plugin (`PivotAnalytics`) that collects player + performance
 - Build: `mvn package` (shaded jar; `dependency-reduced-pom.xml` is generated — don't edit).
 - Test: `mvn test` (JUnit + Mockito; mock `OkHttpClient` via the package-private `EventCollector`/`ApiClient` constructors).
 - Targets Spigot API; `plugin.yml` `api-version: '1.20'`.
+- **Quiet runs for agents:** `mvn -q test` and `mvn -q package`. Show full output only when diagnosing a failure; paste only failures and the test summary into PRs.
 
 ## Layout (`src/main/java/gg/pivot/`)
 - `PivotPlugin.java` — lifecycle (`onEnable`/`onDisable`), config validation, `isValidApiKeyFormat`, `getApiKey`/`getApiEndpoint`.
