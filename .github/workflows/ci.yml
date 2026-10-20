@@ -1,0 +1,72 @@
+name: CI
+
+# Maven verify (compile, unit tests, shaded jar) on every PR and on pushes to the trunk
+# branches. JDK 8 matches the pom's source/target and the release build (release-tag.yml).
+# No secrets.
+
+on:
+  pull_request:
+  push:
+    branches: [develop, main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: mvn verify (JDK 8)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v5
+        with:
+          java-version: '8'
+          distribution: temurin
+          cache: maven
+
+      - name: mvn verify
+        run: mvn -B -ntp verify
+
+      - name: Test summary
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import glob, xml.etree.ElementTree as ET
+          t = {'tests': 0, 'failures': 0, 'errors': 0, 'skipped': 0}
+          for f in glob.glob('target/surefire-reports/TEST-*.xml'):
+              r = ET.parse(f).getroot()
+              for k in t: t[k] += int(r.get(k, 0))
+          line = f"Tests run: {t['tests']}, Failures: {t['failures']}, Errors: {t['errors']}, Skipped: {t['skipped']}"
+          print(f"::notice title=Unit tests::{line}")
+          import os
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as fh: fh.write(f"### {line}\n")
+          PY
+
+      # Surface each failing test as an annotation on the PR, and keep the reports.
+      - name: Annotate test failures
+        if: failure()
+        run: |
+          python3 - <<'PY'
+          import glob, xml.etree.ElementTree as ET
+          for f in glob.glob('target/surefire-reports/TEST-*.xml'):
+              for tc in ET.parse(f).getroot().iter('testcase'):
+                  for kind in ('error', 'failure'):
+                      e = tc.find(kind)
+                      if e is not None:
+                          msg = (e.get('type', '') + ': ' + (e.get('message') or '')).replace('\n', ' ')
+                          print(f"::error title=Test {kind}: {tc.get('classname')}.{tc.get('name')}::{msg[:500]}")
+          PY
+
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: surefire-reports
+          path: target/surefire-reports/
+          retention-days: 7
