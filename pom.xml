@@ -65,13 +65,13 @@
         <dependency>
             <groupId>org.mockito</groupId>
             <artifactId>mockito-core</artifactId>
-            <version>5.8.0</version>
+            <version>4.11.0</version>
             <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>org.mockito</groupId>
             <artifactId>mockito-junit-jupiter</artifactId>
-            <version>5.8.0</version>
+            <version>4.11.0</version>
             <scope>test</scope>
         </dependency>
     </dependencies>
@@ -82,6 +82,29 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
                 <version>3.11.0</version>
+            </plugin>
+
+            <!-- Load Mockito's inline mock maker (mockStatic, final classes) as a -javaagent instead of
+                 self-attaching at runtime, which fails on some JVMs/sandboxes and is going away. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <version>3.6.1</version>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>properties</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.2.5</version>
+                <configuration>
+                    <argLine>-javaagent:${net.bytebuddy:byte-buddy-agent:jar}</argLine>
+                </configuration>
             </plugin>
 
             <plugin>
