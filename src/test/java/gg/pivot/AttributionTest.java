@@ -1,15 +1,19 @@
 package gg.pivot;
 
 import gg.pivot.util.HostnameDetector;
+import org.bukkit.Bukkit;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.entity.Player;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerLoginEvent;
+import org.bukkit.plugin.PluginManager;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.mockito.ArgumentCaptor;
+import org.mockito.MockedStatic;
 
 import java.util.UUID;
 import java.util.logging.Logger;
@@ -26,9 +30,16 @@ public class AttributionTest {
     private EventListener listener;
     private Player player;
     private final UUID playerId = UUID.randomUUID();
+    private MockedStatic<Bukkit> mockedBukkit;
 
     @BeforeEach
     public void setup() {
+        // onPlayerJoin looks up ViaVersion via the static Bukkit.getPluginManager(); there is no
+        // server in unit tests, so stub it with ViaVersion absent (client_version stays null).
+        PluginManager pluginManager = mock(PluginManager.class);
+        mockedBukkit = mockStatic(Bukkit.class);
+        mockedBukkit.when(Bukkit::getPluginManager).thenReturn(pluginManager);
+
         plugin = mock(PivotPlugin.class);
         config = mock(FileConfiguration.class);
         eventCollector = mock(EventCollector.class);
@@ -45,6 +56,11 @@ public class AttributionTest {
         player = mock(Player.class);
         doReturn(playerId).when(player).getUniqueId();
         doReturn("TestPlayer").when(player).getName();
+    }
+
+    @AfterEach
+    public void tearDown() {
+        mockedBukkit.close();
     }
 
     @Test
