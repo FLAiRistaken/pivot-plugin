@@ -31,7 +31,7 @@ rate-limit reports without a demonstrated impact.
 
 ## Supported versions
 
-Latest minor (`0.2.x`).
+Latest minor (`0.9.x`).
 
 ## Rules for contributors and agents
 
