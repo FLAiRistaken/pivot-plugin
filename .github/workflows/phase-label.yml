@@ -9,7 +9,7 @@ on:
     types: [opened, edited, reopened, ready_for_review, synchronize]
 
 permissions:
-  issues: write
+  issues: read
   pull-requests: write
 
 jobs:
@@ -17,9 +17,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/github-script@v7
-        env:
-          # Optional: lets the Action read issues in other private repos (Closes owner/repo#N).
-          READ_TOKEN: ${{ secrets.PIVOT_GITHUB_TOKEN }}
         with:
           script: |
             const pr = context.payload.pull_request;
@@ -28,7 +25,6 @@ jobs:
               return;
             }
             const { owner, repo } = context.repo;
-            const reader = process.env.READ_TOKEN ? getOctokit(process.env.READ_TOKEN) : github;
             const body = (pr.body || "").replace(/<!--[\s\S]*?-->/g, " ");
 
             // GitHub closing keywords, one per reference, optional colon ("Closes: #12").
@@ -39,8 +35,7 @@ jobs:
                 ? { owner: m[1], repo: m[2], issue_number: Number(m[3]) }
                 : { owner: m[4] || owner, repo: m[5] || repo, issue_number: Number(m[6]) };
               try {
-                const client = ref.owner === owner && ref.repo === repo ? github : reader;
-                const { data } = await client.rest.issues.get(ref);
+                const { data } = await github.rest.issues.get(ref);
                 for (const l of data.labels) {
                   const name = typeof l === "string" ? l : l.name;
                   if (name && name.toLowerCase().startsWith("phase:")) wanted.add(name);
