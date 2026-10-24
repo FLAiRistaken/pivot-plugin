@@ -1,0 +1,25 @@
+# One-time history scan (pivot-docs#10): confirmed false positives only.
+# Each fingerprint (commit:file:rule:line) has its reason on the line above.
+
+# test fixture, obviously fake short key
+9137e4675f54039e88278a701c722bab3279c82e:src/test/java/gg/pivot/ApiClientTest.java:generic-api-key:54
+# test fixture, obviously fake short key
+702efa35034da5756cf4489006fc02fa950b37ab:src/test/java/gg/pivot/EventCollectorFlatConfigTest.java:generic-api-key:64
+# docs curl example, literal placeholder token
+5c2856ea2773e94c10bd9fbc2d8d6ef5bb909cf9:.jules/API_CONTRACT.md:curl-auth-header:1507
+# docs curl example, literal placeholder token
+5c2856ea2773e94c10bd9fbc2d8d6ef5bb909cf9:.jules/API_CONTRACT.md:curl-auth-header:1517
+# docs example, truncated JWT header (no payload or signature)
+39ebebbcc46b81691ef8085929bbae3ce1a474a3:.jules/API_CONTRACT.md:generic-api-key:292
+# test fixture, obviously fake short key
+fe0cecd2932dbd65b537bbd0601b9afca8daf451:src/test/java/gg/pivot/EventCollectorTest.java:generic-api-key:36
+# test fixture, obviously fake short key
+fe0cecd2932dbd65b537bbd0601b9afca8daf451:src/test/java/gg/pivot/EventCollectorTest.java:generic-api-key:39
+# test fixture, obviously fake short key
+fe0cecd2932dbd65b537bbd0601b9afca8daf451:src/test/java/gg/pivot/EventCollectorTest.java:generic-api-key:45
+# test fixture, obviously fake short key
+fe0cecd2932dbd65b537bbd0601b9afca8daf451:src/test/java/gg/pivot/EventCollectorTest.java:generic-api-key:46
+# docs example, truncated JWT header (no payload or signature)
+2ba47d5c06ef50aaa64c8298d32a6aa6e479183b:.jules/API_CONTRACT.md:generic-api-key:182
+# docs example, truncated JWT header (no payload or signature)
+2ba47d5c06ef50aaa64c8298d32a6aa6e479183b:.jules/API_CONTRACT.md:generic-api-key:223
