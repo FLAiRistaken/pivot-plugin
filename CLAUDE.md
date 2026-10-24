@@ -34,4 +34,12 @@ Bukkit/Spigot/Paper plugin (`PivotAnalytics`) that collects player + performance
 The backend caps and validates everything (`player_name<=16`, `hostname<=255`, `command<=64`), but the plugin is the first line of defense for player privacy — uphold the invariants above regardless of backend behavior.
 
 ## Code navigation (token-savior)
-If the `token-savior` MCP tools are available (local sessions on Joe's Mac), use them before Read/Grep: `find_symbol` to locate a definition, `get_function_source` / `get_class_source` instead of reading whole files, `search_codebase` to find existing code to reuse, and `get_change_impact` / `find_impacted_test_files` before editing. Fall back to Read/Grep only for non-code files or when the index can't answer. Rules: pivot-docs `current/ORCHESTRATOR_CONTEXT_V6.md` §8.
+Local sessions on Joe's Mac have the `token-savior` MCP tools; cloud sessions and Jules don't (use targeted Grep/Read there). When you have them, read, search and navigate code only through token-savior. Shell `grep`/`rg`/`cat`/`head`/`sed`/`awk` on source files counts as Grep/Read and is what this rule replaces.
+
+1. **Index the tree you edit.** In a worktree (`~/projects/pivot/<repo>-<N>`): `switch_project(path="/Users/joecastle/projects/pivot/<repo>-<N>")`. In the main checkout: `switch_project(name="<repo>")`. Then `get_git_status` and check the branch is yours.
+2. **Find:** `find_symbol` for definitions (up to 10 names per call); `search_codebase` for text in code, usages and callers (`semantic=true` for "code that does X").
+3. **Read:** `get_function_source` for a function or method; `get_full_context(name, depth=1)` for a class, or a symbol with its deps and callers. Not whole-file Read.
+4. **Before changing a symbol:** `get_full_context(name, depth=2)` (adds change impact) and check the callers it lists. If you changed a public signature, run `detect_breaking_changes(since_ref="origin/<base branch>")` before opening the PR.
+5. **Edit:** `replace_symbol_source` to rewrite a whole function or class; native Edit for a small change inside one.
+
+Native Read/Grep are fine for non-code files (Markdown, YAML, JSON, SQL, templates), for a line range named in a traceback, and when token-savior returns nothing (say so in the PR). The `optimized` profile exposes a subset of tools: find others with `ts_search`, and don't call tools that aren't listed. Don't re-read a file that's already in context and unchanged. Rules: pivot-docs `current/ORCHESTRATOR_CONTEXT_V6.md` §8.
