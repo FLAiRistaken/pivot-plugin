@@ -1,0 +1,18 @@
+{
+  "mcpServers": {
+    "token-savior": {
+      "type": "stdio",
+      "command": "/Users/joecastle/.local/bin/uvx",
+      "args": [
+        "--from",
+        "token-savior-recall[mcp,memory-vector]",
+        "token-savior"
+      ],
+      "env": {
+        "WORKSPACE_ROOTS": ".",
+        "TOKEN_SAVIOR_PROFILE": "optimized"
+      },
+      "alwaysLoad": true
+    }
+  }
+}
