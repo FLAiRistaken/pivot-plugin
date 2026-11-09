@@ -10,7 +10,7 @@
       ],
       "env": {
         "WORKSPACE_ROOTS": ".",
-        "TOKEN_SAVIOR_PROFILE": "optimized"
+        "TOKEN_SAVIOR_PROFILE": "auto"
       },
       "alwaysLoad": true
     }
